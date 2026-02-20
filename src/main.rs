@@ -51,20 +51,18 @@ fn main() {
 
         // Execute instruction
         match &instructions[instruction_index] {
-            Instruction::Increment(register) => match registers.get_mut(&register) {
-                Some(val) => val.increment(),
-                None => {
-                    registers.insert(register.clone(), Unsigned(1));
-                    ()
-                }
-            },
-            Instruction::Decrement(register) => match registers.get_mut(&register) {
-                Some(val) => val.decrement(),
-                None => {
-                    registers.insert(register.clone(), Unsigned(1));
-                    ()
-                }
-            },
+            Instruction::Increment(register) => {
+                registers
+                    .entry(register.to_owned())
+                    .and_modify(|u| u.increment())
+                    .or_insert(Unsigned(1));
+            }
+            Instruction::Decrement(register) => {
+                registers
+                    .entry(register.to_owned())
+                    .and_modify(|u| u.decrement())
+                    .or_insert(Unsigned(0));
+            }
             Instruction::Conditional(register, label) => {
                 let value = registers.get(register).unwrap_or(&Unsigned(0)).0;
                 if value != 0 {
