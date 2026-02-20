@@ -1,0 +1,3 @@
+[A] IF X0 != 0 GOTO B
+    INCREMENT Y
+[B] STOP
