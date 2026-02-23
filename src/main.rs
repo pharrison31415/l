@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fs::read_to_string;
 
-use l::{Instruction, Label, Register, Unsigned};
+use l::{Instruction, Label, MachineState};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -11,7 +11,7 @@ fn main() {
 
     let mut instructions: Vec<Instruction> = Vec::new();
 
-    let mut label_to_instruction_index: HashMap<Label, usize> = HashMap::new();
+    let mut jump_table: HashMap<Label, usize> = HashMap::new();
 
     let mut blank_lines = 0;
 
@@ -29,64 +29,22 @@ fn main() {
         // Label map
         match label_opt {
             Some(label) => {
-                label_to_instruction_index.insert(label, line_num - blank_lines);
+                jump_table.insert(label, line_num - blank_lines);
             }
             None => {}
         }
     }
 
-    let mut registers: HashMap<Register, Unsigned> = HashMap::new();
+    let inputs = args[2..]
+        .iter()
+        .map(|s| usize::from_str_radix(s, 10).expect("Not an unsigned input"))
+        .collect();
 
-    for (i, str) in args[2..].iter().enumerate() {
-        let register = Register::X(Unsigned(i));
-        let val = Unsigned(usize::from_str_radix(str, 10).expect("Not an unsigned integer"));
-        registers.insert(register, val);
-    }
+    let mut machine_state = MachineState::new(inputs, instructions, jump_table);
 
-    let mut instruction_index: usize = 0;
+    machine_state.run();
 
-    loop {
-        // println!("{} {:?}", instruction_index, registers);
-        // std::thread::sleep(std::time::Duration::from_millis(200));
+    let y = machine_state.get_y();
 
-        // Execute instruction
-        match &instructions[instruction_index] {
-            Instruction::Increment(register) => {
-                registers
-                    .entry(register.to_owned())
-                    .and_modify(|u| u.increment())
-                    .or_insert(Unsigned(1));
-            }
-            Instruction::Decrement(register) => {
-                registers
-                    .entry(register.to_owned())
-                    .and_modify(|u| u.decrement())
-                    .or_insert(Unsigned(0));
-            }
-            Instruction::Conditional(register, label) => {
-                let value = registers.get(register).unwrap_or(&Unsigned(0)).0;
-                if value != 0 {
-                    instruction_index = *label_to_instruction_index
-                        .get(label)
-                        .expect("unexpected label");
-                    continue;
-                }
-            }
-            Instruction::Goto(label) => {
-                instruction_index = *label_to_instruction_index
-                    .get(label)
-                    .expect("unexpected label");
-                continue;
-            }
-            Instruction::Stop => {
-                break;
-            }
-        }
-
-        // Go to the next line
-        instruction_index += 1;
-    }
-
-    let y_val = registers.get(&Register::Y).unwrap_or(&Unsigned(0));
-    println!("{}", y_val);
+    println!("{}", y);
 }
