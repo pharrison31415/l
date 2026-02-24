@@ -1,38 +1,17 @@
-use std::collections::HashMap;
 use std::env;
 use std::fs::read_to_string;
 
-use l::{Instruction, Label, MachineState};
+use l::{Parser, MachineState};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
 
     let file_path = &args[1];
 
-    let mut instructions: Vec<Instruction> = Vec::new();
-
-    let mut jump_table: HashMap<Label, usize> = HashMap::new();
-
-    let mut blank_lines = 0;
+    let mut parser = Parser::new();
 
     for (line_num, line) in read_to_string(file_path).unwrap().lines().enumerate() {
-        // Comment or blank line
-        if line.starts_with("#") || line.trim() == "" {
-            blank_lines += 1;
-            continue;
-        }
-
-        // Parse line
-        let (label_opt, instruction) = Instruction::parse(line);
-        instructions.push(instruction);
-
-        // Label map
-        match label_opt {
-            Some(label) => {
-                jump_table.insert(label, line_num - blank_lines);
-            }
-            None => {}
-        }
+        parser.parse_line(line, line_num);
     }
 
     let inputs = args[2..]
@@ -40,7 +19,7 @@ fn main() {
         .map(|s| usize::from_str_radix(s, 10).expect("Not an unsigned input"))
         .collect();
 
-    let mut machine_state = MachineState::new(inputs, instructions, jump_table);
+    let mut machine_state = MachineState::new(inputs, parser.instructions, parser.jump_table);
 
     machine_state.run();
 

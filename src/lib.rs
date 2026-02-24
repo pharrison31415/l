@@ -50,84 +50,113 @@ pub enum Instruction {
     Stop,
 }
 
-impl Instruction {
-    pub fn parse(line: &str) -> (Option<Label>, Self) {
-        let mut label: Option<Label> = None;
+pub struct Parser {
+    pub blank_lines: usize,
+    pub instructions: Vec<Instruction>,
+    pub jump_table: HashMap<Label, usize>,
+    pub max_x: Option<Unsigned>,
+    pub max_z: Option<Unsigned>,
+}
+
+impl Parser {
+    pub fn new() -> Self {
+        Self {
+            blank_lines: 0,
+            instructions: Vec::new(),
+            jump_table: HashMap::new(),
+            max_x: None,
+            max_z: None,
+        }
+    }
+
+    fn maybe_set_max_x(&mut self, x: &Unsigned) {
+        self.max_x = match &self.max_x {
+            Some(max_x) => Some(Unsigned(std::cmp::max(max_x.0, x.0))),
+            None => Some(x.clone()),
+        };
+    }
+
+    fn maybe_set_max_z(&mut self, z: &Unsigned) {
+        self.max_z = match &self.max_z {
+            Some(max_z) => Some(Unsigned(std::cmp::max(max_z.0, z.0))),
+            None => Some(z.clone()),
+        };
+    }
+
+    fn parse_register(&mut self, register_str: &str) -> Register {
+        let (head, tail) = register_str.split_at(1);
+        match head {
+            "X" => {
+                let unsigned = Unsigned(usize::from_str_radix(tail, 10).unwrap());
+                self.maybe_set_max_x(&unsigned);
+                Register::X(unsigned)
+            }
+            "Y" => Register::Y,
+            "Z" => {
+                let unsigned = Unsigned(usize::from_str_radix(tail, 10).unwrap());
+                self.maybe_set_max_z(&unsigned);
+                Register::Z(unsigned)
+            }
+            _ => panic!("Unable to parse register"),
+        }
+    }
+
+    pub fn parse_line(&mut self, line: &str, line_num: usize) {
+        // Parse blank line
+        if line.starts_with("#") || line.trim() == "" {
+            self.blank_lines += 1;
+            return;
+        }
 
         let words = line.split_ascii_whitespace();
         let mut words_enum = words.enumerate();
 
         while let Some((index, word)) = words_enum.next() {
-            // Handle comment
-            if word.starts_with("#") {}
-
-            // Handle label
+            // Parse label
             if index == 0 && word.starts_with("[") {
-                label = Some(Label(word[1..word.len() - 1].to_owned()));
+                let label = Label(word[1..word.len() - 1].to_owned());
+                self.jump_table.insert(label, line_num - self.blank_lines);
                 continue;
             }
-
-            // Handle Increment/Decrement
+            // Parse Increment/Decrement
             if ["INCREMENT", "DECREMENT"].contains(&word) {
                 let register_str = words_enum.next().unwrap().1;
-                let register_arr = &register_str[0..1];
-                let register = match register_arr {
-                    "X" => Register::X(Unsigned(
-                        usize::from_str_radix(&register_str[1..], 10).unwrap(),
-                    )),
-                    "Y" => Register::Y,
-                    "Z" => Register::Z(Unsigned(
-                        usize::from_str_radix(&register_str[1..], 10).unwrap(),
-                    )),
-                    _ => panic!("Bad register"),
-                };
-
-                match word {
-                    "INCREMENT" => return (label, Instruction::Increment(register)),
-                    "DECREMENT" => return (label, Instruction::Decrement(register)),
+                let register = self.parse_register(register_str);
+                let instruction = match word {
+                    "INCREMENT" => Instruction::Increment(register),
+                    "DECREMENT" => Instruction::Decrement(register),
                     _ => panic!("Impossible state"),
-                }
-            }
-
-            // Handle Conditional Jump
-            if word == "IF" {
-                let register_str = words_enum.next().unwrap().1;
-                let register_arr = &register_str[0..1];
-                let register = match register_arr {
-                    "X" => Register::X(Unsigned(
-                        usize::from_str_radix(&register_str[1..], 10).unwrap(),
-                    )),
-                    "Y" => Register::Y,
-                    "Z" => Register::Z(Unsigned(
-                        usize::from_str_radix(&register_str[1..], 10).unwrap(),
-                    )),
-                    _ => panic!("Bad register"),
                 };
+                self.instructions.push(instruction);
+            }
+            // Parse Conditional Jump
+            else if word == "IF" {
+                let register_str = words_enum.next().unwrap().1;
+                let register = self.parse_register(register_str);
 
                 while let Some((_, word)) = words_enum.next() {
                     if word == "GOTO" {
                         break;
                     }
                 }
-                let goto = Label(words_enum.next().unwrap().1.to_string());
-
-                return (label, Instruction::Conditional(register, goto));
-            }
-
-            // Handle GOTO
-            if word == "GOTO" {
                 let target = Label(words_enum.next().unwrap().1.to_string());
-                return (label, Instruction::Goto(target));
-            }
 
-            // Handle STOP
-            if word == "STOP" {
-                return (label, Instruction::Stop);
+                self.instructions
+                    .push(Instruction::Conditional(register, target));
             }
+            // Parse GOTO
+            else if word == "GOTO" {
+                let target = Label(words_enum.next().unwrap().1.to_string());
 
-            panic!("unable to process instruction begining with word {word}")
+                self.instructions.push(Instruction::Goto(target));
+            }
+            // Parse STOP
+            else if word == "STOP" {
+                self.instructions.push(Instruction::Stop);
+            } else {
+                panic!("Unable to process instruction begining with word {word}")
+            }
         }
-        (Some(Label(String::from("hi"))), Instruction::Stop)
     }
 }
 
