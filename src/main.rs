@@ -1,7 +1,7 @@
 use std::env;
 use std::fs::read_to_string;
 
-use l::{Parser, MachineState};
+use l::{parser::Parser, machine_state::MachineState};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -10,9 +10,10 @@ fn main() {
 
     let mut parser = Parser::new();
 
-    for (line_num, line) in read_to_string(file_path).unwrap().lines().enumerate() {
-        parser.parse_line(line, line_num);
-    }
+    let file_str = read_to_string(file_path).unwrap();
+    let lines = file_str.lines();
+
+    parser.parse_lines(lines);
 
     let inputs = args[2..]
         .iter()
