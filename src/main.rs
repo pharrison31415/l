@@ -20,7 +20,7 @@ fn main() {
         .map(|s| usize::from_str_radix(s, 10).expect("Not an unsigned input"))
         .collect();
 
-    let mut machine_state = MachineState::new(inputs, parser.instructions, parser.jump_table);
+    let mut machine_state = MachineState::new(inputs, parser.instructions);
 
     machine_state.run();
 

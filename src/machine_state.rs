@@ -1,20 +1,20 @@
 use std::collections::HashMap;
 
-use crate::primitives::{Instruction, Label, Register, Unsigned};
+use crate::{
+    jump_list::JumpList,
+    primitives::{Instruction, Label, Register, Unsigned},
+};
 
 pub struct MachineState {
-    pub program_counter: usize,
     pub register_values: HashMap<Register, Unsigned>,
-    pub instructions: Vec<Instruction>,
-    pub jump_table: HashMap<Label, usize>,
+    pub instructions: JumpList<Instruction, Label>,
     pub running: bool,
 }
 
 impl MachineState {
     pub fn new(
         inputs: Vec<usize>,
-        instructions: Vec<Instruction>,
-        jump_table: HashMap<Label, usize>,
+        instructions: JumpList<Instruction, Label>,
     ) -> Self {
         let mut register_values = HashMap::new();
 
@@ -23,10 +23,8 @@ impl MachineState {
         }
 
         Self {
-            program_counter: 0,
             register_values,
             instructions,
-            jump_table,
             running: true,
         }
     }
@@ -47,7 +45,7 @@ impl MachineState {
                     .and_modify(|u| u.increment())
                     .or_insert(Unsigned(1));
 
-                self.program_counter += 1;
+                self.instructions.goto_next();
             }
             Instruction::Decrement(r) => {
                 self.register_values
@@ -55,18 +53,18 @@ impl MachineState {
                     .and_modify(|u| u.decrement())
                     .or_insert(Unsigned(0));
 
-                self.program_counter += 1;
+                self.instructions.goto_next();
             }
-            Instruction::Conditional(r, l) => {
+            Instruction::Conditional(r, _) => {
                 let value = self.register_values.get(&r).unwrap_or(&Unsigned(0)).0;
-                self.program_counter = if value != 0 {
-                    *self.jump_table.get(&l).expect("unexpected label")
+                if value != 0 {
+                    self.instructions.goto_jump();
                 } else {
-                    self.program_counter + 1
-                };
+                    self.instructions.goto_next();
+                }
             }
-            Instruction::Goto(l) => {
-                self.program_counter = *self.jump_table.get(&l).expect("unexpected label");
+            Instruction::Goto(_) => {
+                self.instructions.goto_jump();
             }
             Instruction::Stop => {
                 self.running = false;
@@ -76,11 +74,11 @@ impl MachineState {
 
     pub fn run(&mut self) {
         while self.running {
-            // println!("{} {:?}", self.program_counter, self.register_values);
+            // println!("{:?} {:?}", self.register_values, self.instructions.get());
             // std::thread::sleep(std::time::Duration::from_millis(200));
 
-            let instruction = match self.instructions.get(self.program_counter) {
-                Some(i) => i.clone(),
+            let instruction = match self.instructions.get() {
+                Some(i) => i,
                 None => {
                     self.running = false;
                     break;

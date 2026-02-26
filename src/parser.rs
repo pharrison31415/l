@@ -1,12 +1,13 @@
-use std::{collections::HashMap, str::Lines};
+use std::str::Lines;
 
-use crate::primitives::{Instruction, Label, Register, Unsigned};
+use crate::{
+    jump_list::JumpList,
+    primitives::{Instruction, Label, Register, Unsigned},
+};
 
 pub struct Parser {
     pub blank_lines: usize,
-    // pub macro_requests: HashSet<String>,
-    pub instructions: Vec<Instruction>,
-    pub jump_table: HashMap<Label, usize>,
+    pub instructions: JumpList<Instruction, Label>,
     pub max_x: Option<Unsigned>,
     pub max_z: Option<Unsigned>,
 }
@@ -16,8 +17,7 @@ impl Parser {
         Self {
             blank_lines: 0,
             // macro_requests: HashSet::new(),
-            instructions: Vec::new(),
-            jump_table: HashMap::new(),
+            instructions: JumpList::new(),
             max_x: None,
             max_z: None,
         }
@@ -55,86 +55,92 @@ impl Parser {
         }
     }
 
-    fn parse_instruction(&mut self, line: &str, line_num: usize) {
-        // Parse blank line
-        if line.starts_with("#") || line.trim() == "" {
-            self.blank_lines += 1;
-            return;
+    fn parse_label(&mut self, word: &String) -> Label {
+        Label(word[1..word.len() - 1].to_owned())
+    }
+
+    fn parse_instruction(&mut self, words: Vec<String>) -> Instruction {
+        let mut word_iter = words.iter();
+        let word = word_iter.next().unwrap();
+
+        // Parse Increment/Decrement
+        if ["INCREMENT".to_string(), "DECREMENT".to_string()].contains(word) {
+            let register_str = word_iter.next().unwrap();
+            let register = self.parse_register(register_str);
+            let instruction = match word.as_str() {
+                "INCREMENT" => Instruction::Increment(register),
+                "DECREMENT" => Instruction::Decrement(register),
+                _ => panic!("Impossible state"),
+            };
+            instruction
         }
+        // Parse Conditional Jump
+        else if word == "IF" {
+            let register_str = word_iter.next().unwrap();
+            let register = self.parse_register(register_str);
 
-        let words = line.split_ascii_whitespace();
-        let mut words_enum = words.enumerate();
+            while *word_iter.next().unwrap() != "GOTO" {}
+            let target = Label(word_iter.next().unwrap().to_string());
 
-        while let Some((index, word)) = words_enum.next() {
-            // Parse label
-            if index == 0 && word.starts_with("[") {
-                let label = Label(word[1..word.len() - 1].to_owned());
-                self.jump_table.insert(label, line_num - self.blank_lines);
-                continue;
-            }
-            // Parse Increment/Decrement
-            if ["INCREMENT", "DECREMENT"].contains(&word) {
-                let register_str = words_enum.next().unwrap().1;
-                let register = self.parse_register(register_str);
-                let instruction = match word {
-                    "INCREMENT" => Instruction::Increment(register),
-                    "DECREMENT" => Instruction::Decrement(register),
-                    _ => panic!("Impossible state"),
-                };
-                self.instructions.push(instruction);
-            }
-            // Parse Conditional Jump
-            else if word == "IF" {
-                let register_str = words_enum.next().unwrap().1;
-                let register = self.parse_register(register_str);
+            Instruction::Conditional(register, target)
+        }
+        // Parse GOTO
+        else if word == "GOTO" {
+            let target = Label(word_iter.next().unwrap().to_string());
 
-                while let Some((_, word)) = words_enum.next() {
-                    if word == "GOTO" {
-                        break;
-                    }
-                }
-                let target = Label(words_enum.next().unwrap().1.to_string());
+            Instruction::Goto(target)
+        }
+        // Parse STOP
+        else if word == "STOP" {
+            // self.instructions.push(Instruction::Stop);
+            Instruction::Stop
+        // }
+        // // Parse macro
+        // else if word.starts_with("!") {
+        //     // For pattern in macro patterns
+        //     // Find which one matches
 
-                self.instructions
-                    .push(Instruction::Conditional(register, target));
-            }
-            // Parse GOTO
-            else if word == "GOTO" {
-                let target = Label(words_enum.next().unwrap().1.to_string());
-
-                self.instructions.push(Instruction::Goto(target));
-            }
-            // Parse STOP
-            else if word == "STOP" {
-                self.instructions.push(Instruction::Stop);
-            // }
-            // // Parse macro
-            // else if word.starts_with("!") {
-            //     // For pattern in macro patterns
-            //     // Find which one matches
-
-            //     // // Expand macro while executing replacements
-            //     // Empty parser with
-            } else {
-                panic!("Unable to process instruction begining with word {word}")
-            }
+        //     // // Expand macro while executing replacements
+        //     // Empty parser with
+        } else {
+            panic!("Unable to process instruction begining with word {word}")
         }
     }
 
     pub fn parse_lines(&mut self, lines: Lines<'_>) {
-        for (line_num, line) in lines.enumerate() {
-            // if line.starts_with("USEMACRO") {
-            //     let mut words = line.split_ascii_whitespace();
-            //     words.next(); // "USEMACRO"
-            //     let macro_name = words
-            //         .next()
-            //         .expect("Expected macro name after 'USEMACRO'")
-            //         .to_string();
-            //     self.macro_requests.insert(macro_name);
-            // } else {
-                // Parse instruction
-                self.parse_instruction(line, line_num);
-            // }
+
+        for line in lines {
+
+            // Parse blank line
+            if line.starts_with("#") || line.trim() == "" {
+                continue;
+            }
+
+            let words: Vec<_> = line.split_ascii_whitespace().map(str::to_string).collect();
+            let first_word = words.get(0).unwrap();
+
+            // Parse label
+            // TODO: do cleaner
+            let label = if first_word.starts_with("[") {
+                Some(self.parse_label(first_word))
+            } else {
+                None
+            };
+
+            // Parse instruction
+            let instruction = self.parse_instruction(match label {
+                Some(_) => words[1..].to_vec(),
+                None => words,
+            });
+
+            // Jump
+            let jump = match &instruction {
+                Instruction::Conditional(_r, l) => Some(l.clone()),
+                Instruction::Goto(l)=> Some(l.clone()),
+                _ => None,
+            };
+
+            self.instructions.append(instruction, label, jump);
         }
     }
 
