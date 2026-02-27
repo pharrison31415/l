@@ -1,4 +1,7 @@
-use std::str::Lines;
+use std::{
+    slice::Iter,
+    str::Lines,
+};
 
 use crate::{
     jump_list::JumpList,
@@ -55,69 +58,56 @@ impl Parser {
         }
     }
 
-    fn parse_label(&mut self, word: &String) -> Label {
+    fn parse_label(&mut self, word: &str) -> Label {
         Label(word[1..word.len() - 1].to_owned())
     }
 
-    fn parse_instruction(&mut self, words: Vec<String>) -> Instruction {
-        let mut word_iter = words.iter();
-        let word = word_iter.next().unwrap();
+    fn parse_instruction(&mut self, mut word_iter: Iter<'_, &str>) -> Instruction {
+        let word = *word_iter.next().unwrap();
 
-        // Parse Increment/Decrement
-        if ["INCREMENT".to_string(), "DECREMENT".to_string()].contains(word) {
-            let register_str = word_iter.next().unwrap();
-            let register = self.parse_register(register_str);
-            let instruction = match word.as_str() {
-                "INCREMENT" => Instruction::Increment(register),
-                "DECREMENT" => Instruction::Decrement(register),
-                _ => panic!("Impossible state"),
-            };
-            instruction
-        }
-        // Parse Conditional Jump
-        else if word == "IF" {
-            let register_str = word_iter.next().unwrap();
-            let register = self.parse_register(register_str);
+        match word {
+            // Parse Increment/Decrement
+            "INCREMENT" | "DECREMENT" => {
+                let register_str = word_iter.next().unwrap();
+                let register = self.parse_register(register_str);
+                let instruction = match word {
+                    "INCREMENT" => Instruction::Increment(register),
+                    "DECREMENT" => Instruction::Decrement(register),
+                    _ => panic!("Impossible state"),
+                };
+                instruction
+            }
+            // Parse Conditional Jump
+            "IF" => {
+                let register_str = word_iter.next().unwrap();
+                let register = self.parse_register(register_str);
 
-            while *word_iter.next().unwrap() != "GOTO" {}
-            let target = Label(word_iter.next().unwrap().to_string());
+                while *word_iter.next().unwrap() != "GOTO" {}
+                let target = Label(word_iter.next().unwrap().to_string());
 
-            Instruction::Conditional(register, target)
-        }
-        // Parse GOTO
-        else if word == "GOTO" {
-            let target = Label(word_iter.next().unwrap().to_string());
+                Instruction::Conditional(register, target)
+            }
+            // Parse GOTO
+            "GOTO" => {
+                let target = Label(word_iter.next().unwrap().to_string());
 
-            Instruction::Goto(target)
-        }
-        // Parse STOP
-        else if word == "STOP" {
-            // self.instructions.push(Instruction::Stop);
-            Instruction::Stop
-        // }
-        // // Parse macro
-        // else if word.starts_with("!") {
-        //     // For pattern in macro patterns
-        //     // Find which one matches
-
-        //     // // Expand macro while executing replacements
-        //     // Empty parser with
-        } else {
-            panic!("Unable to process instruction begining with word {word}")
+                Instruction::Goto(target)
+            }
+            // Parse STOP
+            "STOP" => Instruction::Stop,
+            _ => panic!("Unable to process instruction begining with word {word}"),
         }
     }
 
     pub fn parse_lines(&mut self, lines: Lines<'_>) {
-
         for line in lines {
-
             // Parse blank line
             if line.starts_with("#") || line.trim() == "" {
                 continue;
             }
 
-            let words: Vec<_> = line.split_ascii_whitespace().map(str::to_string).collect();
-            let first_word = words.get(0).unwrap();
+            let words: Vec<_> = line.split_ascii_whitespace().collect();
+            let first_word = *words.get(0).unwrap();
 
             // Parse label
             // TODO: do cleaner
@@ -127,16 +117,25 @@ impl Parser {
                 None
             };
 
+            // Parse macro
+            // if word.starts_with("!") {
+            // For pattern in macro patterns
+            // Find which one matches
+
+            // // Expand macro while executing replacements
+            // Empty parser with
+            // }
+
             // Parse instruction
             let instruction = self.parse_instruction(match label {
-                Some(_) => words[1..].to_vec(),
-                None => words,
+                Some(_) => words[1..].iter(),
+                None => words.iter(),
             });
 
             // Jump
             let jump = match &instruction {
                 Instruction::Conditional(_r, l) => Some(l.clone()),
-                Instruction::Goto(l)=> Some(l.clone()),
+                Instruction::Goto(l) => Some(l.clone()),
                 _ => None,
             };
 
