@@ -8,7 +8,6 @@ use std::rc::Rc;
 pub struct Node<T, L> {
     pub elem: T,
     pub next: Option<NodePtr<T, L>>,
-    pub prev: Option<NodePtr<T, L>>,
     pub jump: Jump<L, T>,
 }
 
@@ -17,7 +16,6 @@ impl<T, L> Node<T, L> {
         Self {
             elem,
             next: None,
-            prev: None,
             jump: Jump::None,
         }
     }
@@ -31,7 +29,6 @@ pub enum Jump<L, T> {
 }
 
 pub type NodePtr<T, L> = Rc<RefCell<Node<T, L>>>;
-
 
 impl<T: Debug, L: Debug> Debug for Node<T, L> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -75,6 +72,7 @@ where
             unresolved_jumps: HashMap::new(),
         }
     }
+
     pub fn append(&mut self, elem: T, label: Option<L>, jump_label: Option<L>) {
         // Decide jump state BEFORE wrapping in Rc
         let jump = if let Some(j) = jump_label.clone() {
@@ -90,7 +88,6 @@ where
         let node_ptr: NodePtr<T, L> = Rc::new(RefCell::new(Node {
             elem,
             next: None,
-            prev: None,
             jump,
         }));
 
@@ -124,7 +121,6 @@ where
         match self.tail.take() {
             Some(old_tail) => {
                 old_tail.borrow_mut().next = Some(new_tail.clone());
-                new_tail.borrow_mut().prev = Some(old_tail);
                 self.tail = Some(new_tail);
             }
             None => {
@@ -136,11 +132,15 @@ where
 
     pub fn get(&self) -> Option<T> {
         self.pointer
-            .as_ref()
-            .or(self.head.as_ref())
-            .map(|p| p.borrow().elem.clone())
+        .as_ref()
+        .or(self.head.as_ref())
+        .map(|p| p.borrow().elem.clone())
     }
-
+    
+    pub fn reset_pointer(&mut self) {
+        self.pointer = self.head.clone();
+    }
+    
     pub fn goto_next(&mut self) {
         let next = match self.pointer.as_ref() {
             None => self.head.clone(),
@@ -161,5 +161,38 @@ where
         };
 
         self.pointer = jump;
+    }
+
+    fn pop_head_node(&mut self) -> Option<NodePtr<T, L>> {
+        self.head.take().map(|old_head| {
+            old_head.borrow_mut().next.take().map(|new_head| {
+                self.head = Some(new_head);
+            });
+            old_head
+        })
+        // self.head.take().map(|old_head| {
+        //     match old_head.borrow_mut().next.take() {
+        //         Some(new_head) => {
+        //             self.head = Some(new_head);
+        //         }
+        //         None => {
+        //             self.tail.take();
+        //         }
+        //     }
+        //     old_head
+        // })
+    }
+
+    fn insert_node(&mut self, prev: &NodePtr<T, L>, node: NodePtr<T, L>) {
+        self.size += 1;
+        node.borrow_mut().next = prev.borrow().next.clone();
+        prev.borrow_mut().next = Some(node)
+    }
+
+    pub fn nest(&mut self, prev: NodePtr<T, L>, mut other: JumpList<T, L>){
+        other.reset_pointer();
+        while let Some(node) = other.pop_head_node() {
+            self.insert_node(&prev, node);
+        }
     }
 }
