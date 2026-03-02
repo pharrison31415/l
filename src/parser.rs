@@ -1,16 +1,13 @@
-use std::{
-    slice::Iter,
-    str::Lines,
-};
+use std::{collections::HashSet, fs::read_to_string, slice::Iter, str::Lines};
 
 use crate::{
     jump_list::JumpList,
-    primitives::{Instruction, Label, Register, Unsigned},
+    primitives::{Executable, Instruction, Label, Macro, Register, Unsigned},
 };
 
 pub struct Parser {
-    pub blank_lines: usize,
-    pub instructions: JumpList<Instruction, Label>,
+    pub macros_to_resolve: HashSet<Macro>,
+    pub instructions: JumpList,
     pub max_x: Option<Unsigned>,
     pub max_z: Option<Unsigned>,
 }
@@ -18,8 +15,7 @@ pub struct Parser {
 impl Parser {
     pub fn new() -> Self {
         Self {
-            blank_lines: 0,
-            // macro_requests: HashSet::new(),
+            macros_to_resolve: HashSet::new(),
             instructions: JumpList::new(),
             max_x: None,
             max_z: None,
@@ -107,24 +103,28 @@ impl Parser {
             }
 
             let words: Vec<_> = line.split_ascii_whitespace().collect();
-            let first_word = *words.get(0).unwrap();
+            let first_word = *words.get(0).expect("Expected word on line");
+
+            // Parse USEMACRO declaration
+            if first_word == "USEMACRO" {
+                self.resolve_macro_request(words[1..].concat());
+                continue;
+            }
 
             // Parse label
-            // TODO: do cleaner
-            let label = if first_word.starts_with("[") {
-                Some(self.parse_label(first_word))
-            } else {
-                None
-            };
+            let label = first_word
+                .starts_with('[')
+                .then(|| self.parse_label(first_word));
 
             // Parse macro
-            // if word.starts_with("!") {
-            // For pattern in macro patterns
-            // Find which one matches
-
-            // // Expand macro while executing replacements
-            // Empty parser with
-            // }
+            let possible_macro_word = match label {
+                Some(_) => *words.get(1).expect("Expected word after label"),
+                None => *words.get(0).expect("Expected word on line"),
+            };
+            if possible_macro_word.starts_with("!") {
+                // self.parse_macro(...)
+                todo!("Macro expansion not yet implemented");
+            }
 
             // Parse instruction
             let instruction = self.parse_instruction(match label {
@@ -139,27 +139,33 @@ impl Parser {
                 _ => None,
             };
 
-            self.instructions.append(instruction, label, jump);
+            self.instructions
+                .append(Executable::Instruction(instruction), label, jump);
         }
     }
 
-    // fn resolve_macro_request(&mut self, name: String) -> Macro {
-    //     let file_str = read_to_string(format!("{}.macro.l", name))
-    //         .expect(&format!("Could not find macro {}", name));
-    //     let mut lines = file_str.lines();
+    fn resolve_macro_request(&mut self, name: String) -> Macro {
+        let file_str = read_to_string(format!("{}.macro.l", name))
+            .expect(&format!("Could not find macro {}", name));
+        let mut lines = file_str.lines();
 
-    //     let first_line = lines.next().expect("Expected line in file");
-    //     let mut first_line_words = first_line.split_ascii_whitespace();
+        let first_line = lines
+            .next()
+            .expect(&format!("Expected line in file {}.macro.l", name));
+        let mut first_line_words = first_line.split_ascii_whitespace();
 
-    //     if first_line_words.next().unwrap() != "MACRODEF" {
-    //         panic!("Expected macro file to start with 'MACRODEF'");
-    //     }
+        if first_line_words.next().unwrap() != "MACRODEF" {
+            panic!(
+                "Expected macro file {}.macro.l to start with 'MACRODEF'",
+                name
+            );
+        }
 
-    //     let pattern = &first_line["MACRODEF ".len()..];
+        let pattern = &first_line["MACRODEF ".len()..];
 
-    //     Macro {
-    //         name,
-    //         pattern: pattern.to_string(),
-    //     }
-    // }
+        Macro {
+            name,
+            pattern: pattern.to_string(),
+        }
+    }
 }

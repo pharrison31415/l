@@ -49,3 +49,15 @@ pub enum Instruction {
     Goto(Label),
     Stop,
 }
+
+#[derive(Debug, Clone)]
+pub struct Macro {
+    pub name: String,
+    pub pattern: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum Executable {
+    Instruction(Instruction),
+    Macro(Macro),
+}

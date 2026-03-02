@@ -2,35 +2,29 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::rc::Rc;
 
-pub struct Node<T, L> {
-    pub elem: T,
-    pub next: Option<NodePtr<T, L>>,
-    pub jump: Jump<L, T>,
+use crate::primitives::{Executable, Label};
+
+pub struct Node {
+    pub elem: Executable,
+    pub prev: Option<NodePtr>,
+    pub next: Option<NodePtr>,
+    pub jump: Jump,
 }
 
-impl<T, L> Node<T, L> {
-    pub fn new(elem: T) -> Self {
+impl Node {
+    pub fn new(elem: Executable) -> Self {
         Self {
             elem,
+            prev: None,
             next: None,
             jump: Jump::None,
         }
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum Jump<L, T> {
-    None,
-    Unresolved(L),
-    Resolved(NodePtr<T, L>),
-}
-
-pub type NodePtr<T, L> = Rc<RefCell<Node<T, L>>>;
-
-impl<T: Debug, L: Debug> Debug for Node<T, L> {
+impl Debug for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Node")
             .field("elem", &self.elem)
@@ -40,16 +34,26 @@ impl<T: Debug, L: Debug> Debug for Node<T, L> {
     }
 }
 
-pub struct JumpList<T, L> {
-    pub head: Option<NodePtr<T, L>>,
-    pub tail: Option<NodePtr<T, L>>,
-    pub pointer: Option<NodePtr<T, L>>,
-    pub size: usize,
-    pub jump_table: HashMap<L, NodePtr<T, L>>,
-    pub unresolved_jumps: HashMap<L, Vec<NodePtr<T, L>>>,
+#[derive(Debug, Clone)]
+pub enum Jump {
+    None,
+    Unresolved(Label),
+    Resolved(NodePtr),
 }
 
-impl<T: Debug, L: Debug> Debug for JumpList<T, L> {
+pub type NodePtr = Rc<RefCell<Node>>;
+
+pub struct JumpList {
+    pub head: Option<NodePtr>,
+    pub tail: Option<NodePtr>,
+    pub pointer: Option<NodePtr>,
+    pub size: usize,
+    pub jump_table: HashMap<Label, NodePtr>,
+    pub unresolved_jumps: HashMap<Label, Vec<NodePtr>>,
+    pub unexpanded_nodes: Vec<NodePtr>,
+}
+
+impl Debug for JumpList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("JumpList")
             .field("head", &self.head)
@@ -57,11 +61,7 @@ impl<T: Debug, L: Debug> Debug for JumpList<T, L> {
     }
 }
 
-impl<T, L> JumpList<T, L>
-where
-    T: Debug + Clone,
-    L: Debug + Hash + Eq + Clone,
-{
+impl JumpList {
     pub fn new() -> Self {
         Self {
             head: None,
@@ -70,10 +70,11 @@ where
             size: 0,
             jump_table: HashMap::new(),
             unresolved_jumps: HashMap::new(),
+            unexpanded_nodes: Vec::new(),
         }
     }
 
-    pub fn append(&mut self, elem: T, label: Option<L>, jump_label: Option<L>) {
+    pub fn append(&mut self, elem: Executable, label: Option<Label>, jump_label: Option<Label>) {
         // Decide jump state BEFORE wrapping in Rc
         let jump = if let Some(j) = jump_label.clone() {
             if let Some(target) = self.jump_table.get(&j) {
@@ -85,8 +86,9 @@ where
             Jump::None
         };
 
-        let node_ptr: NodePtr<T, L> = Rc::new(RefCell::new(Node {
+        let node_ptr: NodePtr = Rc::new(RefCell::new(Node {
             elem,
+            prev: None,
             next: None,
             jump,
         }));
@@ -116,11 +118,12 @@ where
         self.append_node(node_ptr);
     }
 
-    fn append_node(&mut self, new_tail: NodePtr<T, L>) {
+    fn append_node(&mut self, new_tail: NodePtr) {
         self.size += 1;
         match self.tail.take() {
             Some(old_tail) => {
                 old_tail.borrow_mut().next = Some(new_tail.clone());
+                new_tail.borrow_mut().prev = Some(old_tail);
                 self.tail = Some(new_tail);
             }
             None => {
@@ -130,17 +133,17 @@ where
         }
     }
 
-    pub fn get(&self) -> Option<T> {
+    pub fn get(&self) -> Option<Executable> {
         self.pointer
-        .as_ref()
-        .or(self.head.as_ref())
-        .map(|p| p.borrow().elem.clone())
+            .as_ref()
+            .or(self.head.as_ref())
+            .map(|p| p.borrow().elem.clone())
     }
-    
+
     pub fn reset_pointer(&mut self) {
         self.pointer = self.head.clone();
     }
-    
+
     pub fn goto_next(&mut self) {
         let next = match self.pointer.as_ref() {
             None => self.head.clone(),
@@ -163,33 +166,24 @@ where
         self.pointer = jump;
     }
 
-    fn pop_head_node(&mut self) -> Option<NodePtr<T, L>> {
+    fn pop_head_node(&mut self) -> Option<NodePtr> {
         self.head.take().map(|old_head| {
             old_head.borrow_mut().next.take().map(|new_head| {
+                self.size += 1;
+                new_head.borrow_mut().prev = None;
                 self.head = Some(new_head);
             });
             old_head
         })
-        // self.head.take().map(|old_head| {
-        //     match old_head.borrow_mut().next.take() {
-        //         Some(new_head) => {
-        //             self.head = Some(new_head);
-        //         }
-        //         None => {
-        //             self.tail.take();
-        //         }
-        //     }
-        //     old_head
-        // })
     }
 
-    fn insert_node(&mut self, prev: &NodePtr<T, L>, node: NodePtr<T, L>) {
+    fn insert_node(&mut self, prev: &NodePtr, node: NodePtr) {
         self.size += 1;
         node.borrow_mut().next = prev.borrow().next.clone();
         prev.borrow_mut().next = Some(node)
     }
 
-    pub fn nest(&mut self, prev: NodePtr<T, L>, mut other: JumpList<T, L>){
+    pub fn nest(&mut self, prev: NodePtr, mut other: JumpList) {
         other.reset_pointer();
         while let Some(node) = other.pop_head_node() {
             self.insert_node(&prev, node);

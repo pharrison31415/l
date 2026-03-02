@@ -1,7 +1,7 @@
 use std::env;
 use std::fs::read_to_string;
 
-use l::{parser::Parser, machine_state::MachineState};
+use l::{machine_state::MachineState, parser::Parser};
 
 fn main() {
     let args: Vec<String> = env::args().collect();

@@ -2,20 +2,17 @@ use std::collections::HashMap;
 
 use crate::{
     jump_list::JumpList,
-    primitives::{Instruction, Label, Register, Unsigned},
+    primitives::{Executable, Instruction, Register, Unsigned},
 };
 
 pub struct MachineState {
     pub register_values: HashMap<Register, Unsigned>,
-    pub instructions: JumpList<Instruction, Label>,
+    pub jump_list: JumpList,
     pub running: bool,
 }
 
 impl MachineState {
-    pub fn new(
-        inputs: Vec<usize>,
-        instructions: JumpList<Instruction, Label>,
-    ) -> Self {
+    pub fn new(inputs: Vec<usize>, instructions: JumpList) -> Self {
         let mut register_values = HashMap::new();
 
         for (index, value) in inputs.iter().enumerate() {
@@ -24,7 +21,7 @@ impl MachineState {
 
         Self {
             register_values,
-            instructions,
+            jump_list: instructions,
             running: true,
         }
     }
@@ -45,7 +42,7 @@ impl MachineState {
                     .and_modify(|u| u.increment())
                     .or_insert(Unsigned(1));
 
-                self.instructions.goto_next();
+                self.jump_list.goto_next();
             }
             Instruction::Decrement(r) => {
                 self.register_values
@@ -53,18 +50,18 @@ impl MachineState {
                     .and_modify(|u| u.decrement())
                     .or_insert(Unsigned(0));
 
-                self.instructions.goto_next();
+                self.jump_list.goto_next();
             }
             Instruction::Conditional(r, _) => {
                 let value = self.register_values.get(&r).unwrap_or(&Unsigned(0)).0;
                 if value != 0 {
-                    self.instructions.goto_jump();
+                    self.jump_list.goto_jump();
                 } else {
-                    self.instructions.goto_next();
+                    self.jump_list.goto_next();
                 }
             }
             Instruction::Goto(_) => {
-                self.instructions.goto_jump();
+                self.jump_list.goto_jump();
             }
             Instruction::Stop => {
                 self.running = false;
@@ -77,8 +74,9 @@ impl MachineState {
             // println!("{:?} {:?}", self.register_values, self.instructions.get());
             // std::thread::sleep(std::time::Duration::from_millis(200));
 
-            let instruction = match self.instructions.get() {
-                Some(i) => i,
+            let instruction = match self.jump_list.get() {
+                Some(Executable::Instruction(i)) => i,
+                Some(Executable::Macro(_)) => panic!("Macro in jump_list"),
                 None => {
                     self.running = false;
                     break;
