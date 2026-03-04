@@ -1,5 +1,7 @@
 use std::fmt;
 
+use regex::Regex;
+
 #[derive(Hash, Eq, PartialEq, Clone)]
 pub struct Unsigned(pub usize);
 
@@ -53,7 +55,8 @@ pub enum Instruction {
 #[derive(Debug, Clone)]
 pub struct Macro {
     pub name: String,
-    pub pattern: String,
+    pub re: Regex,
+    pub lines: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

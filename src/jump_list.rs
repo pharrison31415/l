@@ -50,7 +50,7 @@ pub struct JumpList {
     pub size: usize,
     pub jump_table: HashMap<Label, NodePtr>,
     pub unresolved_jumps: HashMap<Label, Vec<NodePtr>>,
-    pub unexpanded_nodes: Vec<NodePtr>,
+    pub unexpanded_macros: Vec<NodePtr>,
 }
 
 impl Debug for JumpList {
@@ -70,12 +70,12 @@ impl JumpList {
             size: 0,
             jump_table: HashMap::new(),
             unresolved_jumps: HashMap::new(),
-            unexpanded_nodes: Vec::new(),
+            unexpanded_macros: Vec::new(),
         }
     }
 
     pub fn append(&mut self, elem: Executable, label: Option<Label>, jump_label: Option<Label>) {
-        // Decide jump state BEFORE wrapping in Rc
+        // Decide jump state
         let jump = if let Some(j) = jump_label.clone() {
             if let Some(target) = self.jump_table.get(&j) {
                 Jump::Resolved(target.clone())
@@ -86,6 +86,8 @@ impl JumpList {
             Jump::None
         };
 
+        let unexpanded_macro = matches!(elem, Executable::Macro(_));
+
         let node_ptr: NodePtr = Rc::new(RefCell::new(Node {
             elem,
             prev: None,
@@ -93,7 +95,11 @@ impl JumpList {
             jump,
         }));
 
-        // If this node has an unresolved jump, remember it so it can be resolved later.
+        if unexpanded_macro {
+            self.unexpanded_macros.push(node_ptr.clone());
+        }
+
+        // Handle unresolved jump
         if let Some(j) = jump_label {
             if !self.jump_table.contains_key(&j) {
                 self.unresolved_jumps
@@ -103,7 +109,7 @@ impl JumpList {
             }
         }
 
-        // If this node defines a label, store it and resolve any waiting jumps.
+        // Label may resolve jumps
         if let Some(l) = label {
             self.jump_table.insert(l.clone(), node_ptr.clone());
 

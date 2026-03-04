@@ -1,4 +1,6 @@
-use std::{collections::HashSet, fs::read_to_string, slice::Iter, str::Lines};
+use std::{collections::VecDeque, fs::read_to_string, slice::Iter, str::Lines};
+
+use regex::Regex;
 
 use crate::{
     jump_list::JumpList,
@@ -6,7 +8,7 @@ use crate::{
 };
 
 pub struct Parser {
-    pub macros_to_resolve: HashSet<Macro>,
+    pub unexpanded_macros: VecDeque<Macro>,
     pub instructions: JumpList,
     pub max_x: Option<Unsigned>,
     pub max_z: Option<Unsigned>,
@@ -15,7 +17,7 @@ pub struct Parser {
 impl Parser {
     pub fn new() -> Self {
         Self {
-            macros_to_resolve: HashSet::new(),
+            unexpanded_macros: VecDeque::new(),
             instructions: JumpList::new(),
             max_x: None,
             max_z: None,
@@ -107,7 +109,7 @@ impl Parser {
 
             // Parse USEMACRO declaration
             if first_word == "USEMACRO" {
-                self.resolve_macro_request(words[1..].concat());
+                self.build_macro(words[1..].concat());
                 continue;
             }
 
@@ -122,7 +124,8 @@ impl Parser {
                 None => *words.get(0).expect("Expected word on line"),
             };
             if possible_macro_word.starts_with("!") {
-                // self.parse_macro(...)
+                // self.unexpanded_macros.push_back(value);
+                // continue;
                 todo!("Macro expansion not yet implemented");
             }
 
@@ -142,9 +145,11 @@ impl Parser {
             self.instructions
                 .append(Executable::Instruction(instruction), label, jump);
         }
+
+        // Macro resolution queue
     }
 
-    fn resolve_macro_request(&mut self, name: String) -> Macro {
+    fn build_macro(&mut self, name: String) -> Macro {
         let file_str = read_to_string(format!("{}.macro.l", name))
             .expect(&format!("Could not find macro {}", name));
         let mut lines = file_str.lines();
@@ -154,6 +159,7 @@ impl Parser {
             .expect(&format!("Expected line in file {}.macro.l", name));
         let mut first_line_words = first_line.split_ascii_whitespace();
 
+        // Ensure MACRODEF
         if first_line_words.next().unwrap() != "MACRODEF" {
             panic!(
                 "Expected macro file {}.macro.l to start with 'MACRODEF'",
@@ -161,11 +167,19 @@ impl Parser {
             );
         }
 
-        let pattern = &first_line["MACRODEF ".len()..];
+        let macrodef_pattern = &first_line["MACRODEF ".len()..];
+
+        // Find all strings wrapped in curlies. These are the arguments to the macro
+        let macrodef_re = Regex::new(r"\{(?<arg>\S+)}").unwrap();
+        let macro_re_string = macrodef_re
+            .replace_all(&macrodef_pattern, r"(?<$arg>\S+)")
+            .into_owned();
+        let macro_re = Regex::new(&macro_re_string).unwrap();
 
         Macro {
             name,
-            pattern: pattern.to_string(),
+            re: macro_re,
+            lines: lines.map(str::to_string).collect(),
         }
     }
 }
