@@ -109,7 +109,8 @@ impl Parser {
 
             // Parse USEMACRO declaration
             if first_word == "USEMACRO" {
-                self.build_macro(words[1..].concat());
+                let l_macro = self.build_macro(words[1..].concat());
+                self.unexpanded_macros.push_back(l_macro);
                 continue;
             }
 
@@ -118,32 +119,29 @@ impl Parser {
                 .starts_with('[')
                 .then(|| self.parse_label(first_word));
 
-            // Parse macro
             let possible_macro_word = match label {
                 Some(_) => *words.get(1).expect("Expected word after label"),
                 None => *words.get(0).expect("Expected word on line"),
             };
-            if possible_macro_word.starts_with("!") {
-                // self.unexpanded_macros.push_back(value);
-                // continue;
+            // Check if line is a macro
+            let exec = if possible_macro_word.starts_with("!") {
                 todo!("Macro expansion not yet implemented");
-            }
-
-            // Parse instruction
-            let instruction = self.parse_instruction(match label {
-                Some(_) => words[1..].iter(),
-                None => words.iter(),
-            });
+            } else {
+                // Parse instruction
+                Executable::Instruction(self.parse_instruction(match label {
+                    Some(_) => words[1..].iter(),
+                    None => words.iter(),
+                }))
+            };
 
             // Jump
-            let jump = match &instruction {
-                Instruction::Conditional(_r, l) => Some(l.clone()),
-                Instruction::Goto(l) => Some(l.clone()),
+            let jump = match &exec {
+                Executable::Instruction(Instruction::Conditional(_, l)) => Some(l.clone()),
+                Executable::Instruction(Instruction::Goto(l)) => Some(l.clone()),
                 _ => None,
             };
 
-            self.instructions
-                .append(Executable::Instruction(instruction), label, jump);
+            self.instructions.append(exec, label, jump);
         }
 
         // Macro resolution queue
