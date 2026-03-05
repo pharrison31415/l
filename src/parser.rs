@@ -8,13 +8,13 @@ use regex::Regex;
 
 use crate::{
     jump_list::JumpList,
-    primitives::{Executable, Instruction, Label, Macro, MacroCallSite, Register, Unsigned},
+    primitives::{Executable, Instruction, Label, Macro, MacroInvocation, Register, Unsigned},
 };
 
 pub struct Parser {
     pub file_path: String,
     pub requested_macros: Vec<Macro>,
-    pub macro_expansion_queue: VecDeque<MacroCallSite>,
+    pub macro_expansion_queue: VecDeque<MacroInvocation>,
     pub instructions: JumpList,
     // pub max_x: Option<Unsigned>,
     pub max_z: isize,
@@ -27,32 +27,14 @@ impl Parser {
             requested_macros: Vec::new(),
             macro_expansion_queue: VecDeque::new(),
             instructions: JumpList::new(file_path),
-            // max_x: None,
             max_z: -1,
         }
     }
-
-    // pub fn new_subparser(max_z: isize) -> Self {
-    //     let mut new = Self::new();
-    //     new.max_z = max_z;
-    //     new
-    // }
-
-    // fn maybe_set_max_x(&mut self, x: &Unsigned) {
-    //     self.max_x = match &self.max_x {
-    //         Some(max_x) => Some(Unsigned(std::cmp::max(max_x.0, x.0))),
-    //         None => Some(x.clone()),
-    //     };
-    // }
 
     fn maybe_set_max_z(&mut self, z: &Unsigned) {
         self.max_z = self
             .max_z
             .max(isize::try_from(z.0).expect("z.0 doesn't fit in isize"));
-        // self.max_z = match &self.max_z {
-        //     Some(max_z) => Some(Unsigned(std::cmp::max(max_z.0, z.0))),
-        //     None => Some(z.clone()),
-        // };
     }
 
     fn parse_register(&mut self, register_str: &str) -> Register {
@@ -60,7 +42,6 @@ impl Parser {
         match head {
             "X" => {
                 let unsigned = Unsigned(usize::from_str_radix(tail, 10).unwrap());
-                // self.maybe_set_max_x(&unsigned);
                 Register::X(unsigned)
             }
             "Y" => Register::Y,
@@ -143,15 +124,15 @@ impl Parser {
                 Some(_) => *words.get(1).expect("Expected word after label"),
                 None => *words.get(0).expect("Expected word on line"),
             };
-            // Check if line is a macro call site
+            // Check if line is a macro invocation
             let exec = if possible_macro_word.starts_with("!") {
-                // Find which macro this call site matches
+                // Find which macro this invocation matches
                 let (l_macro, captures_map) = self
-                    .find_macro_from_call_site(&line)
+                    .find_macro_from_invoking_line(&line)
                     .expect(&format!("Could not match macro: {}", line));
 
-                // Form call site
-                let call_site = MacroCallSite {
+                // Form macro invocation
+                let invocation = MacroInvocation {
                     l_macro: l_macro.clone(),
                     invocation_file_path: self.file_path.clone(),
                     line: line.to_string(),
@@ -160,8 +141,8 @@ impl Parser {
                 };
 
                 // Insert into expansion queue
-                self.macro_expansion_queue.push_back(call_site.clone());
-                Executable::MacroCallSite(call_site)
+                self.macro_expansion_queue.push_back(invocation.clone());
+                Executable::MacroCallSite(invocation)
             } else {
                 // Parse instruction
                 Executable::Instruction(self.parse_instruction(match label {
@@ -186,9 +167,9 @@ impl Parser {
 
     fn empty_macro_expansion_queue(&mut self) {
         let mut queue_i = 0;
-        while let Some(mut call_site) = self.macro_expansion_queue.pop_front() {
+        while let Some(mut invocation) = self.macro_expansion_queue.pop_front() {
             // Update labels and Z registers
-            call_site.l_macro.lines.iter_mut().for_each(|line| {
+            invocation.l_macro.lines.iter_mut().for_each(|line| {
                 // Update z vars
                 for (u_string, idx) in find_z_vars(&line).iter().rev() {
                     let replacement_unsigned =
@@ -205,17 +186,15 @@ impl Parser {
                     .into_owned();
             });
 
-            // dbg!(&call_site);
-
             // Replace all captures in macro lines
-            let replaced_lines: Vec<_> = call_site
+            let replaced_lines: Vec<_> = invocation
                 .l_macro
                 .lines
                 .iter()
                 .map(|line| {
                     // dbg!(&line);
                     let mut out = line.clone();
-                    for (k, v) in &call_site.captures_map {
+                    for (k, v) in &invocation.captures_map {
                         let curlied_k = "\\{".to_owned() + &k + "}";
                         out = Regex::new(&curlied_k)
                             .unwrap()
@@ -227,9 +206,9 @@ impl Parser {
                 .collect();
 
             // Parse macro lines
-            let mut sub_parser = Self::new(call_site.l_macro.file_name.clone());
+            let mut sub_parser = Self::new(invocation.l_macro.file_name.clone());
             sub_parser.parse_lines(replaced_lines.iter().map(|s| s.as_str()));
-            self.instructions.expand_macro(call_site, sub_parser.instructions);
+            self.instructions.expand_macro(invocation, sub_parser.instructions);
             queue_i += 1;
         }
     }
@@ -279,7 +258,7 @@ impl Parser {
         }
     }
 
-    fn find_macro_from_call_site(&self, line: &str) -> Option<(&Macro, HashMap<String, String>)> {
+    fn find_macro_from_invoking_line(&self, line: &str) -> Option<(&Macro, HashMap<String, String>)> {
         for l_macro in &self.requested_macros {
             if let Some(captures) = l_macro.re.captures(&line) {
                 // This is totally a code smell. I should figure out how to deal with lifetimes

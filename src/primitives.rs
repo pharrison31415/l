@@ -67,7 +67,7 @@ impl PartialEq for Macro {
 }
 
 #[derive(Debug, Clone)]
-pub struct MacroCallSite {
+pub struct MacroInvocation {
     pub l_macro: Macro,
     pub line: String,
     pub line_number: usize,
@@ -75,16 +75,16 @@ pub struct MacroCallSite {
     pub captures_map: HashMap<String, String>,
 }
 
-impl PartialEq for MacroCallSite {
+impl PartialEq for MacroInvocation {
     fn eq(&self, other: &Self) -> bool {
         self.line_number == other.line_number
             && self.invocation_file_path == other.invocation_file_path
     }
 }
 
-impl Eq for MacroCallSite {}
+impl Eq for MacroInvocation {}
 
-impl Hash for MacroCallSite {
+impl Hash for MacroInvocation {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.line_number.hash(state);
         self.invocation_file_path.hash(state);
@@ -94,5 +94,5 @@ impl Hash for MacroCallSite {
 #[derive(Debug, Clone)]
 pub enum Executable {
     Instruction(Instruction),
-    MacroCallSite(MacroCallSite),
+    MacroCallSite(MacroInvocation),
 }

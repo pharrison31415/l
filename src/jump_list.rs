@@ -4,7 +4,7 @@ use std::fmt;
 use std::fmt::Debug;
 use std::rc::Rc;
 
-use crate::primitives::{Executable, Label, MacroCallSite};
+use crate::primitives::{Executable, Label, MacroInvocation};
 
 pub struct Node {
     pub elem: Executable,
@@ -51,7 +51,7 @@ pub struct JumpList {
     pub size: usize,
     pub jump_table: HashMap<Label, NodePtr>,
     pub unresolved_jumps: HashMap<Label, Vec<NodePtr>>,
-    pub unexpanded_macros: HashMap<MacroCallSite, NodePtr>,
+    pub unexpanded_macros: HashMap<MacroInvocation, NodePtr>,
 }
 
 impl Debug for JumpList {
@@ -101,9 +101,9 @@ impl JumpList {
             jump,
         }));
 
-        if let Some(macro_call_site) = mcs_opt {
+        if let Some(invocation) = mcs_opt {
             self.unexpanded_macros
-                .insert(macro_call_site.clone(), node_ptr.clone());
+                .insert(invocation.clone(), node_ptr.clone());
         }
 
         // Handle unresolved jump
@@ -219,10 +219,10 @@ impl JumpList {
         }
     }
 
-    pub fn expand_macro(&mut self, call_site: MacroCallSite, mut macro_jump_list: JumpList) {
+    pub fn expand_macro(&mut self, invocation: MacroInvocation, mut macro_jump_list: JumpList) {
         let node = self
             .unexpanded_macros
-            .get(&call_site)
+            .get(&invocation)
             .expect("Could not find call site node in jump list")
             .clone();
 

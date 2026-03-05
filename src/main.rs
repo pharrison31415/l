@@ -11,8 +11,6 @@ fn main() {
 
     parser.parse_file();
 
-    // dbg!(&parser.instructions);
-
     let inputs = args[2..]
         .iter()
         .map(|s| usize::from_str_radix(s, 10).expect("Not an unsigned input"))
