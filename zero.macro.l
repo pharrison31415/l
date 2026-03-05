@@ -1,0 +1,4 @@
+MACRODEF !{REG} <- ZERO
+
+[A] DECREMENT {REG}
+    IF {REG} != 0 GOTO [A]

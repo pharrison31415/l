@@ -70,8 +70,10 @@ impl MachineState {
     }
 
     pub fn run(&mut self) {
+        self.jump_list.reset_pointer();
+
         while self.running {
-            // println!("{:?} {:?}", self.register_values, self.instructions.get());
+            // println!("{:?} {:?}", self.register_values, self.jump_list.get());
             // std::thread::sleep(std::time::Duration::from_millis(200));
 
             let instruction = match self.jump_list.get() {

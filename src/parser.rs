@@ -226,7 +226,6 @@ impl Parser {
                 })
                 .collect();
 
-            dbg!(&replaced_lines);
             // Parse macro lines
             let mut sub_parser = Self::new(call_site.l_macro.file_name.clone());
             sub_parser.parse_lines(replaced_lines.iter().map(|s| s.as_str()));

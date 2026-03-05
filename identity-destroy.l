@@ -1,5 +1,5 @@
-[A] IF X0 != 0 GOTO B
+[A] IF X0 != 0 GOTO [B]
     STOP
 [B] DECREMENT X0
     INCREMENT Y
-    GOTO A
+    GOTO [A]

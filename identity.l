@@ -1,11 +1,11 @@
-[A] IF X0 != 0 GOTO B
-    GOTO C
+[A] IF X0 != 0 GOTO [B]
+    GOTO [C]
 [B] DECREMENT X0
     INCREMENT Y
     INCREMENT Z0
-    GOTO A
-[C] IF Z0 != 0 GOTO D
+    GOTO [A]
+[C] IF Z0 != 0 GOTO [D]
     STOP
 [D] DECREMENT Z0
     INCREMENT X0
-    GOTO C
+    GOTO [C]

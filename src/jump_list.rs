@@ -149,8 +149,8 @@ impl JumpList {
     pub fn get(&self) -> Option<Executable> {
         self.pointer
             .as_ref()
-            .or(self.head.as_ref())
-            .map(|p| p.borrow().elem.clone())
+            // .or(self.head.as_ref())
+            .map(|p: &Rc<RefCell<Node>>| p.borrow().elem.clone())
     }
 
     pub fn reset_pointer(&mut self) {
@@ -159,7 +159,7 @@ impl JumpList {
 
     pub fn goto_next(&mut self) {
         let next = match self.pointer.as_ref() {
-            None => self.head.clone(),
+            None => None,
             Some(p) => p.borrow().next.clone(),
         };
 
@@ -168,7 +168,7 @@ impl JumpList {
 
     pub fn goto_jump(&mut self) {
         let jump = match self.pointer.as_ref() {
-            None => self.head.clone(),
+            None => None,
             Some(p) => match p.borrow().jump.clone() {
                 Jump::None => panic!("goto_jump called while pointing at non-jump node"),
                 Jump::Unresolved(l) => panic!("goto_jump on unresolved jump: {:?}", l),
@@ -237,7 +237,7 @@ impl JumpList {
             }
         }
 
-        // Merge unresolved jumps 
+        // Merge unresolved jumps
         for (label, mut nodes) in macro_jump_list.unresolved_jumps.drain() {
             if let Some(target) = self.jump_table.get(&label).cloned() {
                 for n in nodes.drain(..) {
