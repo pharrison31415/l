@@ -48,7 +48,6 @@ pub enum Instruction {
     Increment(Register),
     Decrement(Register),
     Conditional(Register, Label),
-    Goto(Label),
     Stop,
 }
 

@@ -83,12 +83,6 @@ impl Parser {
 
                 Instruction::Conditional(register, target)
             }
-            // Parse GOTO
-            "GOTO" => {
-                let target = self.parse_label(word_iter.next().unwrap());
-
-                Instruction::Goto(target)
-            }
             // Parse STOP
             "STOP" => Instruction::Stop,
             _ => panic!("Unable to process instruction begining with word {word}"),
@@ -154,7 +148,6 @@ impl Parser {
             // Jump
             let jump = match &exec {
                 Executable::Instruction(Instruction::Conditional(_, l)) => Some(l.clone()),
-                Executable::Instruction(Instruction::Goto(l)) => Some(l.clone()),
                 _ => None,
             };
 

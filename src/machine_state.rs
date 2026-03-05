@@ -60,9 +60,6 @@ impl MachineState {
                     self.jump_list.goto_next();
                 }
             }
-            Instruction::Goto(_) => {
-                self.jump_list.goto_jump();
-            }
             Instruction::Stop => {
                 self.running = false;
             }
