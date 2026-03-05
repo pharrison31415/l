@@ -1,5 +1,4 @@
 use std::env;
-use std::fs::read_to_string;
 
 use l::{machine_state::MachineState, parser::Parser};
 
@@ -8,12 +7,11 @@ fn main() {
 
     let file_path = &args[1];
 
-    let mut parser = Parser::new();
+    let mut parser = Parser::new(file_path.clone());
 
-    let file_str = read_to_string(file_path).unwrap();
-    let lines = file_str.lines();
+    parser.parse_file();
 
-    parser.parse_lines(lines);
+    // dbg!(&parser.instructions);
 
     let inputs = args[2..]
         .iter()

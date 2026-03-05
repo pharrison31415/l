@@ -76,7 +76,7 @@ impl MachineState {
 
             let instruction = match self.jump_list.get() {
                 Some(Executable::Instruction(i)) => i,
-                Some(Executable::Macro(_)) => panic!("Macro in jump_list"),
+                Some(Executable::MacroCallSite(_)) => panic!("MacroCallSite in jump_list"),
                 None => {
                     self.running = false;
                     break;

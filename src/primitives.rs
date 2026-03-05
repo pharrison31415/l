@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::HashMap, fmt, hash::Hash};
 
 use regex::Regex;
 
@@ -55,12 +55,44 @@ pub enum Instruction {
 #[derive(Debug, Clone)]
 pub struct Macro {
     pub name: String,
+    pub file_name: String,
     pub re: Regex,
     pub lines: Vec<String>,
+}
+
+impl PartialEq for Macro {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MacroCallSite {
+    pub l_macro: Macro,
+    pub line: String,
+    pub line_number: usize,
+    pub invocation_file_path: String,
+    pub captures_map: HashMap<String, String>,
+}
+
+impl PartialEq for MacroCallSite {
+    fn eq(&self, other: &Self) -> bool {
+        self.line_number == other.line_number
+            && self.invocation_file_path == other.invocation_file_path
+    }
+}
+
+impl Eq for MacroCallSite {}
+
+impl Hash for MacroCallSite {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.line_number.hash(state);
+        self.invocation_file_path.hash(state);
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum Executable {
     Instruction(Instruction),
-    Macro(Macro),
+    MacroCallSite(MacroCallSite),
 }

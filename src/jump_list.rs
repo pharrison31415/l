@@ -4,7 +4,7 @@ use std::fmt;
 use std::fmt::Debug;
 use std::rc::Rc;
 
-use crate::primitives::{Executable, Label};
+use crate::primitives::{Executable, Label, MacroCallSite};
 
 pub struct Node {
     pub elem: Executable,
@@ -28,7 +28,7 @@ impl Debug for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Node")
             .field("elem", &self.elem)
-            .field("jump", &self.jump)
+            // .field("jump", &self.jump)
             .field("next", &self.next)
             .finish()
     }
@@ -44,13 +44,14 @@ pub enum Jump {
 pub type NodePtr = Rc<RefCell<Node>>;
 
 pub struct JumpList {
+    pub file_name: String,
     pub head: Option<NodePtr>,
     pub tail: Option<NodePtr>,
     pub pointer: Option<NodePtr>,
     pub size: usize,
     pub jump_table: HashMap<Label, NodePtr>,
     pub unresolved_jumps: HashMap<Label, Vec<NodePtr>>,
-    pub unexpanded_macros: Vec<NodePtr>,
+    pub unexpanded_macros: HashMap<MacroCallSite, NodePtr>,
 }
 
 impl Debug for JumpList {
@@ -62,15 +63,16 @@ impl Debug for JumpList {
 }
 
 impl JumpList {
-    pub fn new() -> Self {
+    pub fn new(file_name: String) -> Self {
         Self {
+            file_name,
             head: None,
             tail: None,
             pointer: None,
             size: 0,
             jump_table: HashMap::new(),
             unresolved_jumps: HashMap::new(),
-            unexpanded_macros: Vec::new(),
+            unexpanded_macros: HashMap::new(),
         }
     }
 
@@ -86,7 +88,11 @@ impl JumpList {
             Jump::None
         };
 
-        let unexpanded_macro = matches!(elem, Executable::Macro(_));
+        // let unexpanded_macro = matches!(elem, Executable::MacroCallSite(_));
+        let mcs_opt = match elem {
+            Executable::Instruction(_) => None,
+            Executable::MacroCallSite(ref mcs) => Some(mcs.clone()),
+        };
 
         let node_ptr: NodePtr = Rc::new(RefCell::new(Node {
             elem,
@@ -95,8 +101,9 @@ impl JumpList {
             jump,
         }));
 
-        if unexpanded_macro {
-            self.unexpanded_macros.push(node_ptr.clone());
+        if let Some(macro_call_site) = mcs_opt {
+            self.unexpanded_macros
+                .insert(macro_call_site.clone(), node_ptr.clone());
         }
 
         // Handle unresolved jump
@@ -164,7 +171,7 @@ impl JumpList {
             None => self.head.clone(),
             Some(p) => match p.borrow().jump.clone() {
                 Jump::None => panic!("goto_jump called while pointing at non-jump node"),
-                Jump::Unresolved(_) => panic!("goto_jump on unresolved jump"),
+                Jump::Unresolved(l) => panic!("goto_jump on unresolved jump: {:?}", l),
                 Jump::Resolved(ref_cell) => Some(ref_cell),
             },
         };
@@ -172,27 +179,82 @@ impl JumpList {
         self.pointer = jump;
     }
 
-    fn pop_head_node(&mut self) -> Option<NodePtr> {
-        self.head.take().map(|old_head| {
-            old_head.borrow_mut().next.take().map(|new_head| {
-                self.size += 1;
-                new_head.borrow_mut().prev = None;
-                self.head = Some(new_head);
-            });
-            old_head
-        })
-    }
+    fn nest(&mut self, prev: Option<NodePtr>, other: JumpList) {
+        self.size += other.size;
 
-    fn insert_node(&mut self, prev: &NodePtr, node: NodePtr) {
-        self.size += 1;
-        node.borrow_mut().next = prev.borrow().next.clone();
-        prev.borrow_mut().next = Some(node)
-    }
+        let next = match prev {
+            Some(ref p) => p.borrow().next.clone(),
+            None => self.head.clone().unwrap().borrow().next.clone(),
+        };
 
-    pub fn nest(&mut self, prev: NodePtr, mut other: JumpList) {
-        other.reset_pointer();
-        while let Some(node) = other.pop_head_node() {
-            self.insert_node(&prev, node);
+        match prev {
+            Some(ref p) => p.borrow_mut().next = other.head.clone(),
+            None => self.head = other.head.clone(),
         }
+        other.head.map(|h| h.borrow_mut().prev = prev);
+
+        other
+            .tail
+            .clone()
+            .map(|t| t.borrow_mut().next = next.clone());
+        next.map(|n| n.borrow_mut().prev = other.tail);
+    }
+
+    fn remove_node(&mut self, node: NodePtr) {
+        self.size -= 1;
+
+        let (prev, next) = {
+            let mut n = node.borrow_mut();
+            (n.prev.take(), n.next.take())
+        };
+
+        match prev.as_ref() {
+            Some(prev_node) => prev_node.borrow_mut().next = next.clone(),
+            None => self.head = next.clone(),
+        }
+
+        match next.as_ref() {
+            Some(next_node) => next_node.borrow_mut().prev = prev.clone(),
+            None => self.tail = prev.clone(),
+        }
+    }
+
+    pub fn expand_macro(&mut self, call_site: MacroCallSite, mut macro_jump_list: JumpList) {
+        let node = self
+            .unexpanded_macros
+            .get(&call_site)
+            .expect("Could not find call site node in jump list")
+            .clone();
+
+        // Merge jump table
+        for (label, target_ptr) in macro_jump_list.jump_table.drain() {
+            self.jump_table.insert(label.clone(), target_ptr.clone());
+
+            if let Some(waiting) = self.unresolved_jumps.remove(&label) {
+                for w in waiting {
+                    w.borrow_mut().jump = Jump::Resolved(target_ptr.clone());
+                }
+            }
+        }
+
+        // Merge unresolved jumps 
+        for (label, mut nodes) in macro_jump_list.unresolved_jumps.drain() {
+            if let Some(target) = self.jump_table.get(&label).cloned() {
+                for n in nodes.drain(..) {
+                    n.borrow_mut().jump = Jump::Resolved(target.clone());
+                }
+            } else {
+                self.unresolved_jumps
+                    .entry(label)
+                    .or_default()
+                    .append(&mut nodes);
+            }
+        }
+
+        let prev = node.borrow().prev.clone();
+
+        self.nest(prev, macro_jump_list);
+
+        self.remove_node(node);
     }
 }
