@@ -18,18 +18,18 @@ USEMACRO noop
         # Z1 <- Z0 - D
 [LOOP]  !Z1 <- Z0 minus {D}
 
-        # check if subtraction changed anything
-        # if Z1 == Z0 then subtraction failed (D > remainder)
-        !Z2 <- Z1 eq Z0
-        IF Z2 != 0 GOTO [NOT]
+        # if Z1 == 0, then either Z0 == D or Z0 < D
+        !Z2 <- not Z1
+        IF Z2 != 0 GOTO [CHECK]
 
-        # if Z1 == 0 then we hit exact multiple
-        !Z3 <- not Z1
-        IF Z3 != 0 GOTO [DIV]
-
-        # otherwise continue subtracting
+        # otherwise keep going
         !Z0 <- copy Z1
         !goto [LOOP]
+
+        # Check for zero
+[CHECK] !Z3 <- Z0 eq {D}
+        IF Z3 != 0 GOTO [DIV]
+        !goto [NOT]
 
         # divisible → return true
 [DIV]   INCREMENT {TARGET}
