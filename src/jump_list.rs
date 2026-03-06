@@ -8,6 +8,7 @@ use crate::primitives::{Executable, Label, MacroInvocation};
 
 pub struct Node {
     pub elem: Executable,
+    pub label: Option<Label>,
     pub prev: Option<NodePtr>,
     pub next: Option<NodePtr>,
     pub jump: Jump,
@@ -17,6 +18,7 @@ impl Node {
     pub fn new(elem: Executable) -> Self {
         Self {
             elem,
+            label: None,
             prev: None,
             next: None,
             jump: Jump::None,
@@ -52,6 +54,7 @@ pub struct JumpList {
     pub jump_table: HashMap<Label, NodePtr>,
     pub unresolved_jumps: HashMap<Label, Vec<NodePtr>>,
     pub unexpanded_macros: HashMap<MacroInvocation, NodePtr>,
+    pub max_label_len: usize,
 }
 
 impl Debug for JumpList {
@@ -73,6 +76,7 @@ impl JumpList {
             jump_table: HashMap::new(),
             unresolved_jumps: HashMap::new(),
             unexpanded_macros: HashMap::new(),
+            max_label_len: 0,
         }
     }
 
@@ -96,6 +100,7 @@ impl JumpList {
 
         let node_ptr: NodePtr = Rc::new(RefCell::new(Node {
             elem,
+            label: label.clone(),
             prev: None,
             next: None,
             jump,
@@ -118,6 +123,7 @@ impl JumpList {
 
         // Label may resolve jumps
         if let Some(l) = label {
+            self.max_label_len = self.max_label_len.max(l.0.len());
             self.jump_table.insert(l.clone(), node_ptr.clone());
 
             if let Some(waiting) = self.unresolved_jumps.remove(&l) {
@@ -153,6 +159,13 @@ impl JumpList {
             .map(|p: &Rc<RefCell<Node>>| p.borrow().elem.clone())
     }
 
+    pub fn get_with_label(&self) -> Option<(Option<Label>, Executable)> {
+        self.pointer
+            .as_ref()
+            // .or(self.head.as_ref())
+            .map(|p: &Rc<RefCell<Node>>| (p.borrow().label.clone(), p.borrow().elem.clone()))
+    }
+
     pub fn reset_pointer(&mut self) {
         self.pointer = self.head.clone();
     }
@@ -179,43 +192,141 @@ impl JumpList {
         self.pointer = jump;
     }
 
-    fn nest(&mut self, prev: Option<NodePtr>, other: JumpList) {
-        self.size += other.size;
+    // fn nest(&mut self, prev: Option<NodePtr>, other: JumpList) {
+    //     self.size += other.size;
 
-        let next = match prev {
-            Some(ref p) => p.borrow().next.clone(),
-            None => self.head.clone().unwrap().borrow().next.clone(),
-        };
+    //     let next = match prev {
+    //         Some(ref p) => p.borrow().next.clone(),
+    //         None => self.head.clone().unwrap().borrow().next.clone(),
+    //     };
 
-        match prev {
-            Some(ref p) => p.borrow_mut().next = other.head.clone(),
-            None => self.head = other.head.clone(),
-        }
-        other.head.map(|h| h.borrow_mut().prev = prev);
+    //     match prev {
+    //         Some(ref p) => p.borrow_mut().next = other.head.clone(),
+    //         None => self.head = other.head.clone(),
+    //     }
+    //     other.head.map(|h| h.borrow_mut().prev = prev);
 
-        other
-            .tail
-            .clone()
-            .map(|t| t.borrow_mut().next = next.clone());
-        next.map(|n| n.borrow_mut().prev = other.tail);
-    }
+    //     other
+    //         .tail
+    //         .clone()
+    //         .map(|t| t.borrow_mut().next = next.clone());
+    //     next.map(|n| n.borrow_mut().prev = other.tail);
+    // }
 
-    fn remove_node(&mut self, node: NodePtr) {
-        self.size -= 1;
+    // fn remove_node(&mut self, node: NodePtr) {
+    //     self.size -= 1;
 
+    //     let (prev, next) = {
+    //         let mut n = node.borrow_mut();
+    //         (n.prev.take(), n.next.take())
+    //     };
+
+    //     match prev.as_ref() {
+    //         Some(prev_node) => prev_node.borrow_mut().next = next.clone(),
+    //         None => self.head = next.clone(),
+    //     }
+
+    //     match next.as_ref() {
+    //         Some(next_node) => next_node.borrow_mut().prev = prev.clone(),
+    //         None => self.tail = prev.clone(),
+    //     }
+    // }
+
+    // pub fn expand_macro(&mut self, invocation: MacroInvocation, mut macro_jump_list: JumpList) {
+    //     let node = self
+    //         .unexpanded_macros
+    //         .get(&invocation)
+    //         .expect("Could not find call site node in jump list")
+    //         .clone();
+
+    //     // Merge jump table
+    //     for (label, target_ptr) in macro_jump_list.jump_table.drain() {
+    //         self.jump_table.insert(label.clone(), target_ptr.clone());
+
+    //         if let Some(waiting) = self.unresolved_jumps.remove(&label) {
+    //             for w in waiting {
+    //                 w.borrow_mut().jump = Jump::Resolved(target_ptr.clone());
+    //             }
+    //         }
+    //     }
+
+    //     // Merge unresolved jumps
+    //     for (label, mut nodes) in macro_jump_list.unresolved_jumps.drain() {
+    //         if let Some(target) = self.jump_table.get(&label).cloned() {
+    //             for n in nodes.drain(..) {
+    //                 n.borrow_mut().jump = Jump::Resolved(target.clone());
+    //             }
+    //         } else {
+    //             self.unresolved_jumps
+    //                 .entry(label)
+    //                 .or_default()
+    //                 .append(&mut nodes);
+    //         }
+    //     }
+
+    //     let prev = node.borrow().prev.clone();
+
+    //     self.nest(prev, macro_jump_list);
+
+    //     self.remove_node(node);
+    //     dbg!(&self.head);
+    // }
+    fn replace_node_with_list(&mut self, node: NodePtr, mut other: JumpList) {
+        // Grab neighbors of the callsite node
         let (prev, next) = {
-            let mut n = node.borrow_mut();
-            (n.prev.take(), n.next.take())
+            let n = node.borrow();
+            (n.prev.clone(), n.next.clone())
         };
 
-        match prev.as_ref() {
-            Some(prev_node) => prev_node.borrow_mut().next = next.clone(),
-            None => self.head = next.clone(),
+        // If `other` is empty, we just remove `node`
+        if other.head.is_none() {
+            // unlink node directly (like remove_node), but without messing up due to wrong "next"
+            self.size -= 1;
+
+            match prev.as_ref() {
+                Some(p) => p.borrow_mut().next = next.clone(),
+                None => self.head = next.clone(),
+            }
+            match next.as_ref() {
+                Some(n) => n.borrow_mut().prev = prev.clone(),
+                None => self.tail = prev.clone(),
+            }
+
+            // (Optional) detach node fully
+            {
+                let mut n = node.borrow_mut();
+                n.prev = None;
+                n.next = None;
+            }
+            return;
         }
 
+        // Non-empty replacement:
+        // total size changes by (other.size - 1) because node is replaced by other's nodes
+        self.size = self.size + other.size - 1;
+
+        let other_head = other.head.take().unwrap();
+        let other_tail = other.tail.take().unwrap();
+
+        // Link prev -> other_head
+        match prev.as_ref() {
+            Some(p) => p.borrow_mut().next = Some(other_head.clone()),
+            None => self.head = Some(other_head.clone()),
+        }
+        other_head.borrow_mut().prev = prev.clone();
+
+        // Link other_tail -> next
+        other_tail.borrow_mut().next = next.clone();
         match next.as_ref() {
-            Some(next_node) => next_node.borrow_mut().prev = prev.clone(),
-            None => self.tail = prev.clone(),
+            Some(n) => n.borrow_mut().prev = Some(other_tail.clone()),
+            None => self.tail = Some(other_tail.clone()),
+        }
+
+        // Detach the removed callsite node (optional but helps avoid accidental misuse)
+        {
+            let mut n = node.borrow_mut();
+            n.prev = None;
+            n.next = None;
         }
     }
 
@@ -251,10 +362,10 @@ impl JumpList {
             }
         }
 
-        let prev = node.borrow().prev.clone();
+        // Splice macro list in *at the callsite position* (correct next/prev handling)
+        self.replace_node_with_list(node, macro_jump_list);
 
-        self.nest(prev, macro_jump_list);
-
-        self.remove_node(node);
+        // If you want, keep this:
+        // dbg!(&self.head);
     }
 }

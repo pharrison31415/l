@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, hash::Hash};
+use std::{collections::HashMap, fmt::{self}, hash::Hash};
 
 use regex::Regex;
 
@@ -40,8 +40,24 @@ pub enum Register {
     Z(Unsigned),
 }
 
+impl fmt::Display for Register {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self {
+            Register::X(u) => format!("X{}", u),
+            Register::Y => "Y".to_string(),
+            Register::Z(u) => format!("Z{}", u),
+        })
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub struct Label(pub String);
+
+impl fmt::Display for Label {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}]", self.0)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Instruction {

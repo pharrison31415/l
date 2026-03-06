@@ -16,8 +16,8 @@ pub struct Parser {
     pub requested_macros: Vec<Macro>,
     pub macro_expansion_queue: VecDeque<MacroInvocation>,
     pub instructions: JumpList,
-    // pub max_x: Option<Unsigned>,
-    pub max_z: isize,
+    pub max_z: Option<Unsigned>,
+    pub next_label_uid: usize,
 }
 
 impl Parser {
@@ -27,14 +27,16 @@ impl Parser {
             requested_macros: Vec::new(),
             macro_expansion_queue: VecDeque::new(),
             instructions: JumpList::new(file_path),
-            max_z: -1,
+            max_z: None,
+            next_label_uid: 0,
         }
     }
 
     fn maybe_set_max_z(&mut self, z: &Unsigned) {
-        self.max_z = self
-            .max_z
-            .max(isize::try_from(z.0).expect("z.0 doesn't fit in isize"));
+        self.max_z = match &self.max_z {
+            Some(current) => Some(Unsigned(current.0.max(z.0))),
+            None => Some(z.clone()),
+        }
     }
 
     fn parse_register(&mut self, register_str: &str) -> Register {
@@ -153,29 +155,33 @@ impl Parser {
 
             self.instructions.append(exec, label, jump);
         }
-
         // Macro expansion queue must be emptied
+
         self.empty_macro_expansion_queue();
     }
 
     fn empty_macro_expansion_queue(&mut self) {
-        let mut queue_i = 0;
+        // let mut queue_i = 0;
         while let Some(mut invocation) = self.macro_expansion_queue.pop_front() {
+            let uid = self.next_label_uid;
+            self.next_label_uid += 1;
+
             // Update labels and Z registers
             invocation.l_macro.lines.iter_mut().for_each(|line| {
                 // Update z vars
                 for (u_string, idx) in find_z_vars(&line).iter().rev() {
-                    let replacement_unsigned =
-                        self.max_z + 1 + isize::from_str_radix(u_string, 10).unwrap();
+                    let replacement_unsigned = self.max_z.as_ref().map_or(0, |z| z.0 + 1)
+                        + usize::from_str_radix(u_string, 10).unwrap();
                     line.replace_range(
                         idx..&(idx + &u_string.len()),
                         &replacement_unsigned.to_string(),
                     );
                 }
+
                 // Update labels
                 let label_regex = Regex::new(r"\[(?<lab>\S+)\]").unwrap();
                 *line = label_regex
-                    .replace_all(line, format!(r"[$lab-{}]", queue_i))
+                    .replace_all(line, format!(r"[$lab-{}]", uid))
                     .into_owned();
             });
 
@@ -200,14 +206,20 @@ impl Parser {
 
             // Parse macro lines
             let mut sub_parser = Self::new(invocation.l_macro.file_name.clone());
+            sub_parser.next_label_uid = self.next_label_uid;
             sub_parser.parse_lines(replaced_lines.iter().map(|s| s.as_str()));
-            self.instructions.expand_macro(invocation, sub_parser.instructions);
-            queue_i += 1;
+            self.next_label_uid = sub_parser.next_label_uid;
+            sub_parser.max_z.map(|z| self.maybe_set_max_z(&z));
+            self.instructions
+                .expand_macro(invocation, sub_parser.instructions);
+
+            // queue_i += 1;
         }
     }
 
     pub fn parse_file(&mut self) {
-        let file_str = read_to_string(&self.file_path).unwrap();
+        let file_str = read_to_string(&self.file_path)
+            .expect(&format!("Could not read file at {}", &self.file_path));
         let lines = file_str.lines();
 
         self.parse_lines(lines);
@@ -251,7 +263,10 @@ impl Parser {
         }
     }
 
-    fn find_macro_from_invoking_line(&self, line: &str) -> Option<(&Macro, HashMap<String, String>)> {
+    fn find_macro_from_invoking_line(
+        &self,
+        line: &str,
+    ) -> Option<(&Macro, HashMap<String, String>)> {
         for l_macro in &self.requested_macros {
             if let Some(captures) = l_macro.re.captures(&line) {
                 // This is totally a code smell. I should figure out how to deal with lifetimes
@@ -276,46 +291,66 @@ enum LookingFor {
     Digit,
 }
 
-// This should be a regex with a look-around group
+// Finds occurrences like: Z123 (outside {...})
 fn find_z_vars(line: &String) -> Vec<(String, usize)> {
     let mut out = Vec::new();
+
     let mut look = LookingFor::Z;
     let mut first_digit = false;
     let mut current_finding = (String::new(), 0);
+
     for (idx, character) in line.chars().enumerate() {
-        // println!("char: {}, look: {:?}", character, look);
         match (&look, character) {
+            // Enter ignore zone: {...}
             (_, '{') => {
                 current_finding = (String::new(), 0);
                 look = LookingFor::CloseCurly;
             }
-            (LookingFor::Z, 'Z') => {
-                look = LookingFor::Digit;
-                first_digit = true;
-            }
+            // Exit ignore zone
             (LookingFor::CloseCurly, '}') => {
                 look = LookingFor::Z;
             }
-            (LookingFor::Digit, c) => {
-                if c.is_digit(10) {
-                    if first_digit {
-                        current_finding.1 = idx;
-                    }
-                    current_finding.0.push(c);
-                } else if c.is_whitespace() {
-                    out.push(current_finding);
-                    current_finding = (String::new(), idx);
-                    look = LookingFor::Z;
-                } else {
-                    panic!("Unable to find Z fars in line: {}", line);
-                }
+
+            // Start a Z-number
+            (LookingFor::Z, 'Z') => {
+                current_finding = (String::new(), 0);
+                look = LookingFor::Digit;
+                first_digit = true;
             }
-            (_, _) => {}
+
+            // We are reading digits after Z
+            (LookingFor::Digit, c) if c.is_ascii_digit() => {
+                if first_digit {
+                    current_finding.1 = idx; // index of first digit
+                    first_digit = false;
+                }
+                current_finding.0.push(c);
+                // stay in LookingFor::Digit
+            }
+
+            // End token on whitespace: commit if we actually collected digits
+            (LookingFor::Digit, c) if c.is_whitespace() => {
+                if !current_finding.0.is_empty() {
+                    out.push(current_finding);
+                }
+                current_finding = (String::new(), 0);
+                look = LookingFor::Z;
+            }
+
+            // Any other character terminates the attempt (e.g. "ZERO", "Z-1", "Zx")
+            (LookingFor::Digit, _) => {
+                current_finding = (String::new(), 0);
+                look = LookingFor::Z;
+            }
+
+            _ => {}
         }
     }
 
-    if matches!(look, LookingFor::Digit) {
+    // End-of-line commit if we were in digits and collected some
+    if matches!(look, LookingFor::Digit) && !current_finding.0.is_empty() {
         out.push(current_finding);
     }
+
     out
 }
