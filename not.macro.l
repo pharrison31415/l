@@ -1,0 +1,9 @@
+MACRODEF !{TARGET} <- not {SOURCE}
+
+USEMACRO zero
+USEMACRO noop
+
+    !{TARGET} <- ZERO
+    IF {SOURCE} != 0 GOTO [A]
+    INCREMENT {TARGET}
+[A] !noop
