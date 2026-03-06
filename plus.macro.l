@@ -1,4 +1,4 @@
-MACRODEF !{SUM} <- add {A0} {A1}
+MACRODEF !{SUM} <- {A0} plus {A1}
 
 USEMACRO copy
 USEMACRO goto
