@@ -88,6 +88,7 @@ pub struct MacroInvocation {
     pub line_number: usize,
     pub invocation_file_path: String,
     pub captures_map: HashMap<String, String>,
+    pub callsite_label: Option<Label>
 }
 
 impl PartialEq for MacroInvocation {

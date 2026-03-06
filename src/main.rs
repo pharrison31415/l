@@ -14,15 +14,18 @@ fn main() {
     // dbg!(&parser.instructions);
     if args.get(2) == Some(&"-c".to_string()) {
         // TODO: fix
-        let padding_num = ((parser.instructions.max_label_len + 4) / 4) * 4;
+        // let padding_num = ((parser.instructions.max_label_len + 4) / 4) * 4;
+        let padding_num = 8;
         // dbg!(&parser.instructions.max_label_len);
         // dbg!(&padding_num);
 
         parser.instructions.reset_pointer();
         while let Some((label_opt, executable)) = parser.instructions.get_with_label() {
             match label_opt {
-                Some(l) => print!("{:<width$}", l, width = padding_num),
-                None => print!("{}", " ".repeat(padding_num)),
+                // Some(l) => print!("{:<width$} ", l, width = padding_num),
+                Some(l) => print!("{}\t", l),
+                // None => print!("{} ", " ".repeat(padding_num)),
+                None => print!("\t"),
             }
             match executable {
                 l::primitives::Executable::MacroCallSite(inv) => {

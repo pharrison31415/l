@@ -134,6 +134,7 @@ impl Parser {
                     line: line.to_string(),
                     line_number: idx,
                     captures_map,
+                    callsite_label: label.clone(),
                 };
 
                 // Insert into expansion queue

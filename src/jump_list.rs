@@ -192,85 +192,6 @@ impl JumpList {
         self.pointer = jump;
     }
 
-    // fn nest(&mut self, prev: Option<NodePtr>, other: JumpList) {
-    //     self.size += other.size;
-
-    //     let next = match prev {
-    //         Some(ref p) => p.borrow().next.clone(),
-    //         None => self.head.clone().unwrap().borrow().next.clone(),
-    //     };
-
-    //     match prev {
-    //         Some(ref p) => p.borrow_mut().next = other.head.clone(),
-    //         None => self.head = other.head.clone(),
-    //     }
-    //     other.head.map(|h| h.borrow_mut().prev = prev);
-
-    //     other
-    //         .tail
-    //         .clone()
-    //         .map(|t| t.borrow_mut().next = next.clone());
-    //     next.map(|n| n.borrow_mut().prev = other.tail);
-    // }
-
-    // fn remove_node(&mut self, node: NodePtr) {
-    //     self.size -= 1;
-
-    //     let (prev, next) = {
-    //         let mut n = node.borrow_mut();
-    //         (n.prev.take(), n.next.take())
-    //     };
-
-    //     match prev.as_ref() {
-    //         Some(prev_node) => prev_node.borrow_mut().next = next.clone(),
-    //         None => self.head = next.clone(),
-    //     }
-
-    //     match next.as_ref() {
-    //         Some(next_node) => next_node.borrow_mut().prev = prev.clone(),
-    //         None => self.tail = prev.clone(),
-    //     }
-    // }
-
-    // pub fn expand_macro(&mut self, invocation: MacroInvocation, mut macro_jump_list: JumpList) {
-    //     let node = self
-    //         .unexpanded_macros
-    //         .get(&invocation)
-    //         .expect("Could not find call site node in jump list")
-    //         .clone();
-
-    //     // Merge jump table
-    //     for (label, target_ptr) in macro_jump_list.jump_table.drain() {
-    //         self.jump_table.insert(label.clone(), target_ptr.clone());
-
-    //         if let Some(waiting) = self.unresolved_jumps.remove(&label) {
-    //             for w in waiting {
-    //                 w.borrow_mut().jump = Jump::Resolved(target_ptr.clone());
-    //             }
-    //         }
-    //     }
-
-    //     // Merge unresolved jumps
-    //     for (label, mut nodes) in macro_jump_list.unresolved_jumps.drain() {
-    //         if let Some(target) = self.jump_table.get(&label).cloned() {
-    //             for n in nodes.drain(..) {
-    //                 n.borrow_mut().jump = Jump::Resolved(target.clone());
-    //             }
-    //         } else {
-    //             self.unresolved_jumps
-    //                 .entry(label)
-    //                 .or_default()
-    //                 .append(&mut nodes);
-    //         }
-    //     }
-
-    //     let prev = node.borrow().prev.clone();
-
-    //     self.nest(prev, macro_jump_list);
-
-    //     self.remove_node(node);
-    //     dbg!(&self.head);
-    // }
     fn replace_node_with_list(&mut self, node: NodePtr, mut other: JumpList) {
         // Grab neighbors of the callsite node
         let (prev, next) = {
@@ -329,13 +250,43 @@ impl JumpList {
             n.next = None;
         }
     }
-
     pub fn expand_macro(&mut self, invocation: MacroInvocation, mut macro_jump_list: JumpList) {
         let node = self
             .unexpanded_macros
             .get(&invocation)
             .expect("Could not find call site node in jump list")
             .clone();
+
+        // move callsite label onto the expansion head
+        let callsite_label = node.borrow_mut().label.take();
+        if let Some(lbl) = callsite_label {
+            if let Some(ref head) = macro_jump_list.head {
+                if head.borrow().label.is_some() {
+                    panic!(
+                        "Macro expansion label conflict: callsite label {:?} but macro head already has label {:?}",
+                        lbl,
+                        head.borrow().label
+                    );
+                }
+
+                head.borrow_mut().label = Some(lbl.clone());
+
+                // Register label in outer tables now so outer unresolved jumps can resolve
+                self.max_label_len = self.max_label_len.max(lbl.0.len());
+                self.jump_table.insert(lbl.clone(), head.clone());
+
+                if let Some(waiting) = self.unresolved_jumps.remove(&lbl) {
+                    for w in waiting {
+                        w.borrow_mut().jump = Jump::Resolved(head.clone());
+                    }
+                }
+            } else {
+                panic!(
+                    "Labeled macro callsite {:?} expanded to empty list; label would have no target",
+                    lbl
+                );
+            }
+        }
 
         // Merge jump table
         for (label, target_ptr) in macro_jump_list.jump_table.drain() {
@@ -362,10 +313,7 @@ impl JumpList {
             }
         }
 
-        // Splice macro list in *at the callsite position* (correct next/prev handling)
+        // Splice macro list in at the callsite position
         self.replace_node_with_list(node, macro_jump_list);
-
-        // If you want, keep this:
-        // dbg!(&self.head);
     }
 }

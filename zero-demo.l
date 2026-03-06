@@ -1,8 +1,0 @@
-USEMACRO zero
-
-INCREMENT Y
-!Y <- ZERO
-INCREMENT Y
-!Y <- ZERO
-INCREMENT Y
-# Expect 1
