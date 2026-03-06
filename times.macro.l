@@ -1,4 +1,4 @@
-MACRODEF !{PROD} <- multiply {M0} {M1}
+MACRODEF !{PROD} <- {M0} times {M1}
 
 USEMACRO add
 USEMACRO copy
