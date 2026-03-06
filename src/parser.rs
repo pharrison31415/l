@@ -122,6 +122,11 @@ impl Parser {
             };
             // Check if line is a macro invocation
             let exec = if possible_macro_word.starts_with("!") {
+                for (u_string, _) in find_z_vars(&line.to_string()) {
+                    let z = Unsigned(usize::from_str_radix(&u_string, 10).unwrap());
+                    self.maybe_set_max_z(&z);
+                }
+
                 // Find which macro this invocation matches
                 let (l_macro, captures_map) = self
                     .find_macro_from_invoking_line(&line)
