@@ -23,9 +23,9 @@ fn main() {
         while let Some((label_opt, executable)) = parser.instructions.get_with_label() {
             match label_opt {
                 // Some(l) => print!("{:<width$} ", l, width = padding_num),
-                Some(l) => print!("{}\t", l),
+                Some(l) => print!("{} ", l),
                 // None => print!("{} ", " ".repeat(padding_num)),
-                None => print!("\t"),
+                None => print!("{} ", " ".repeat(padding_num)),
             }
             match executable {
                 l::primitives::Executable::MacroCallSite(inv) => {

@@ -242,15 +242,11 @@ impl JumpList {
             Some(n) => n.borrow_mut().prev = Some(other_tail.clone()),
             None => self.tail = Some(other_tail.clone()),
         }
-
-        // Detach the removed callsite node (optional but helps avoid accidental misuse)
-        {
-            let mut n = node.borrow_mut();
-            n.prev = None;
-            n.next = None;
-        }
     }
+
     pub fn expand_macro(&mut self, invocation: MacroInvocation, mut macro_jump_list: JumpList) {
+        self.max_label_len = self.max_label_len.max(macro_jump_list.max_label_len);
+
         let node = self
             .unexpanded_macros
             .get(&invocation)
@@ -271,7 +267,9 @@ impl JumpList {
 
                 head.borrow_mut().label = Some(lbl.clone());
 
-                // Register label in outer tables now so outer unresolved jumps can resolve
+                // redirect already-resolved jumps from old callsite to new head
+                self.redirect_resolved_jumps(&node, head);
+
                 self.max_label_len = self.max_label_len.max(lbl.0.len());
                 self.jump_table.insert(lbl.clone(), head.clone());
 
@@ -315,5 +313,22 @@ impl JumpList {
 
         // Splice macro list in at the callsite position
         self.replace_node_with_list(node, macro_jump_list);
+    }
+
+    fn redirect_resolved_jumps(&mut self, from: &NodePtr, to: &NodePtr) {
+        let mut cur = self.head.clone();
+
+        while let Some(node) = cur {
+            let next = node.borrow().next.clone();
+            let should_redirect = match node.borrow().jump.clone() {
+                Jump::Resolved(target) => Rc::ptr_eq(&target, from),
+                _ => false,
+            };
+
+            if should_redirect {
+                node.borrow_mut().jump = Jump::Resolved(to.clone());
+            }
+            cur = next;
+        }
     }
 }
