@@ -97,7 +97,7 @@ impl Parser {
     {
         for (idx, line) in lines.enumerate() {
             // Parse blank line
-            if line.starts_with("#") || line.trim() == "" {
+            if line.trim().starts_with("#") || line.trim() == "" {
                 continue;
             }
 
