@@ -1,6 +1,6 @@
 MACRODEF !{PROD} <- {M0} times {M1}
 
-USEMACRO add
+USEMACRO plus
 USEMACRO copy
 USEMACRO goto
 USEMACRO noop
@@ -14,7 +14,7 @@ USEMACRO zero
 [A]     IF Z1 != 0 GOTO [B]
         !goto [END]
 [B]     DECREMENT Z1
-        !Z0 <- add X0 {PROD}
+        !Z0 <- X0 plus {PROD}
         !{PROD} <- copy Z0
         !goto [A]
 [END]   !noop
