@@ -79,24 +79,9 @@ impl JumpList {
             max_label_len: 0,
         }
     }
-
-    pub fn append(&mut self, elem: Executable, label: Option<Label>, jump_label: Option<Label>) {
-        // Decide jump state
-        let jump = if let Some(j) = jump_label.clone() {
-            if let Some(target) = self.jump_table.get(&j) {
-                Jump::Resolved(target.clone())
-            } else {
-                Jump::Unresolved(j)
-            }
-        } else {
-            Jump::None
-        };
-
-        // let unexpanded_macro = matches!(elem, Executable::MacroCallSite(_));
-        let mcs_opt = match elem {
-            Executable::Instruction(_) => None,
-            Executable::MacroCallSite(ref mcs) => Some(mcs.clone()),
-        };
+    pub fn append(&mut self, elem: Executable, label: Option<Label>, goto: Option<Label>) {
+        let jump = self.build_jump(&goto);
+        let invocation_opt = self.macro_invocation(&elem);
 
         let node_ptr: NodePtr = Rc::new(RefCell::new(Node {
             elem,
@@ -106,35 +91,54 @@ impl JumpList {
             jump,
         }));
 
-        if let Some(invocation) = mcs_opt {
-            self.unexpanded_macros
-                .insert(invocation.clone(), node_ptr.clone());
+        if let Some(invocation) = invocation_opt {
+            self.unexpanded_macros.insert(invocation, node_ptr.clone());
         }
 
-        // Handle unresolved jump
-        if let Some(j) = jump_label {
-            if !self.jump_table.contains_key(&j) {
+        self.register_unresolved_jump(&goto, &node_ptr);
+        self.register_label(&label, &node_ptr);
+        self.append_node(node_ptr);
+    }
+
+    fn build_jump(&self, jump_label: &Option<Label>) -> Jump {
+        match jump_label {
+            Some(label) => match self.jump_table.get(label) {
+                Some(target) => Jump::Resolved(target.clone()),
+                None => Jump::Unresolved(label.clone()),
+            },
+            None => Jump::None,
+        }
+    }
+
+    fn macro_invocation(&self, elem: &Executable) -> Option<MacroInvocation> {
+        match elem {
+            Executable::Instruction(_) => None,
+            Executable::MacroCallSite(mcs) => Some(mcs.clone()),
+        }
+    }
+
+    fn register_unresolved_jump(&mut self, jump_label: &Option<Label>, node_ptr: &NodePtr) {
+        if let Some(label) = jump_label {
+            if !self.jump_table.contains_key(label) {
                 self.unresolved_jumps
-                    .entry(j)
+                    .entry(label.clone())
                     .or_default()
                     .push(node_ptr.clone());
             }
         }
+    }
 
-        // Label may resolve jumps
-        if let Some(l) = label {
-            self.max_label_len = self.max_label_len.max(l.0.len());
-            self.jump_table.insert(l.clone(), node_ptr.clone());
+    fn register_label(&mut self, label: &Option<Label>, node_ptr: &NodePtr) {
+        if let Some(label) = label {
+            self.max_label_len = self.max_label_len.max(label.0.len());
+            self.jump_table.insert(label.clone(), node_ptr.clone());
 
-            if let Some(waiting) = self.unresolved_jumps.remove(&l) {
-                for w in waiting {
-                    w.borrow_mut().jump = Jump::Resolved(node_ptr.clone());
+            if let Some(waiting) = self.unresolved_jumps.remove(label) {
+                for unresolved in waiting {
+                    unresolved.borrow_mut().jump = Jump::Resolved(node_ptr.clone());
                 }
             }
         }
-
-        // Add node to tail
-        self.append_node(node_ptr);
     }
 
     fn append_node(&mut self, new_tail: NodePtr) {
