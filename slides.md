@@ -3,16 +3,11 @@
 title: An Interpreter for Computability Theory Written the Hard Way
 # theme: ./dark.json
 author: Paul Harrison
-paging: ssh [IP] -p 53531
 
 ---
 
 # An Interpreter for Computability Theory  
 ## Written the Hard Way
-
-&nbsp;
-
-**Follow along**: `ssh [IP] -p 53531` (Warning: quiz spoilers ahead)
 
 ---
 
@@ -24,11 +19,19 @@ Paul Harrison
 
 SRE @ Lucid Software
 
-B.S. in Computer Science from USU
+B.S. in Computer Science from Utah State University
+
+Moved to Arlington VA in July 2026
 
 &nbsp;
 
 Started learning Rust around the end of 2024
+
+&nbsp;
+
+Free time: working on a rust webapp!
+
+Mountain biking team management platform: [https://beta.hsmtb.com/](https://beta.hsmtb.com/)
 
 ---
 
@@ -238,8 +241,8 @@ What does this compute?
 This program computes:
 
 ```
-f(x) = if x == 0: 1
-       else 0
+f(x) = if x == 0:   1
+       else:        0
 ```
 
 ---
@@ -985,12 +988,30 @@ let label = first_word
 
 # Reflections
 
-AI has a place in software development: **faster iteration** during debugging.
+## AI 
 
-Where I find AI tools most useful:
-- explaining unfamiliar code
-- automating unintelligent, repetitive work
-- turning technical design ideas into code
+AI has a place in software development: **faster iteration** during debugging and initial writing.
+
+This project took place in Jan-Feb 2026, and several things have changed in AI-enabled software engineering.
+
+---
+
+# Reflections
+
+## AI 
+
+AI has a place in software development: **faster iteration** during debugging and initial writing.
+
+This project took place in Jan-Feb 2026, and several things have changed in AI-enabled software engineering.
+
+## Future of this project
+
+Might go nowhere, but some cool posibilities:
+
+- code cleanup
+- optimizations
+- interactive debugger
+- LLVM frontend to compile to native executables
 
 ---
 
